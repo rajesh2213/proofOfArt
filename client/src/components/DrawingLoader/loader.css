@@ -1,0 +1,10 @@
+@keyframes draw-full-mask {
+    to {
+      stroke-dashoffset: 0; 
+    }
+  }
+  
+  .drawing-mask-stroke {
+    stroke-dasharray: 4000; 
+    stroke-dashoffset: 4000;
+  }

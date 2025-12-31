@@ -1,0 +1,120 @@
+@import "tailwindcss";
+
+.font-wet-paint {
+  font-family: var(--font-wet-paint), sans-serif;
+}
+
+.font-paint-drops {
+  font-family: var(--font-paint-drops), sans-serif;
+}
+
+.font-paint-peel {
+  font-family: var(--font-paint-peel), sans-serif;
+}
+
+:root {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9fafb;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --border-color: #e5e7eb;
+  
+  --color-paint-1: #f5f1e8; 
+  --color-paint-2: #e8e0d3;
+  --color-canvas: #faf8f3; 
+  --color-ultramarine: #4169e1; 
+  --color-ultramarine-dark: #1e3a8a;
+  --color-glass: rgba(255, 255, 255, 0.1);
+  --color-glass-border: rgba(0, 0, 0, 0.1);
+}
+
+.dark {
+  --bg-primary: #111827;
+  --bg-secondary: #1f2937;
+  --text-primary: #f9fafb;
+  --text-secondary: #d1d5db;
+  --border-color: #374151;
+}
+
+html {
+  background-color: #ffffff; 
+  color: var(--text-primary);
+  transition: color 0.3s ease;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  background-color: #ffffff;
+  color: inherit;
+  transition: color 0.3s ease;
+  min-height: 100vh;
+  width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.bg-white {
+  background-color: var(--bg-primary) ;
+}
+
+.dark\:bg-gray-900 {
+  background-color: var(--bg-primary);
+}
+
+.bg-gray-800 {
+  background-color: var(--bg-secondary);
+}
+
+.dark\:bg-gray-800 {
+  background-color: var(--bg-secondary) ;
+}
+
+.text-gray-900 {
+  color: var(--text-primary) ;
+}
+
+.dark\:text-white {
+  color: var(--text-primary);
+}
+
+.text-gray-600 {
+  color: var(--text-secondary);
+}
+
+.dark\:text-gray-300 {
+  color: var(--text-secondary);
+}
+
+.text-gray-700 {
+  color: var(--text-primary);
+}
+
+.dark\:text-gray-300 {
+  color: var(--text-primary);
+}
+
+.bg-gray-100 {
+  background-color: var(--bg-secondary) ;
+}
+
+.dark\:bg-gray-700 {
+  background-color: var(--bg-secondary) ;
+}
+
+.hover\:bg-gray-200:hover {
+  background-color: var(--border-color) ;
+}
+
+.dark\:hover\:bg-gray-600:hover {
+  background-color: var(--border-color);
+}
+
+.disable-all-pointer-events * {
+  pointer-events: none !important;
+}
+

@@ -1,0 +1,8 @@
+{
+  "frameWidth": 1280,
+  "frameHeight": 720,
+  "totalFrames": 180,
+  "framesPerRow": 10,
+  "rows": 18,
+  "output": "./paint_drip_merged.webp"
+}
