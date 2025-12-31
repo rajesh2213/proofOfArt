@@ -1,0 +1,220 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+model User {
+  id                         String            @id @default(cuid())
+  username                   String
+  email                      String            @unique
+  passwordHash               String            @map("password_hash")
+  role                       Role
+  verified                   Boolean           @default(false)
+  verificationToken          String?           @unique @map("verification_token")
+  verificationTokenExpiresAt DateTime?         @map("verification_token_expires_at")
+  googleId                   String?           @unique @map("google_id")
+  isAnonymous                Boolean           @default(false) @map("is_anonymous")
+  createdAt                  DateTime          @default(now()) @map("created_at")
+  imageClaims                ImageClaim[]
+  ownedArtworks              Artwork[]         @relation("ArtworkOwner")
+  uploadedArtworks           Artwork[]         @relation("ArtworkUploader")
+  ownershipHistory           OwnershipHistory[]
+  notifications              Notification[]
+  claims                     ArtworkClaim[]    @relation("ClaimRequester")
+  reviewedClaims             ArtworkClaim[]    @relation("ClaimReviewer")
+
+  @@map("users")
+}
+
+model Image {
+  id              String           @id @default(cuid())
+  hash            String           @unique
+  filename        String?
+  metadata        Json?
+  url             String
+  status          ImageStatus
+  createdAt       DateTime         @default(now()) @map("created_at")
+  imageClaims     ImageClaim[]
+  detectionReport DetectionReport?
+  editDetections  EditDetection[]
+  artwork         Artwork?
+
+  @@map("images")
+}
+
+model ImageClaim {
+  userId                String
+  imageId               String
+  id                    String      @unique @default(cuid())
+  user                  User        @relation(fields: [userId], references: [id])
+  image                 Image       @relation(fields: [imageId], references: [id])
+  sessionId             String?     @map("session_id")
+  isPrimaryOwner        Boolean     @default(false) @map("is_primary_owner")
+  uploadDate            DateTime    @default(now()) @map("upload_date")
+  claimEvidenceMetadata Json?       @map("claim_evidence_metadata")
+  status                ClaimStatus @default(PENDING)
+
+  @@id([userId, imageId])
+  @@map("image_claims")
+}
+
+model DetectionReport {
+  id            String        @id @default(cuid())
+  imageId       String        @unique
+  aiProbability Float         @map("ai_probability")
+  detectedLabel DetectedLabel
+  modelName     String?       @map("model_name")
+  heatmapUrl    String?       @map("heatmap_url")
+  flagged       Boolean       @default(false)
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  image         Image         @relation(fields: [imageId], references: [id])
+
+  @@index([imageId])
+  @@map("detection_report")
+}
+
+model EditDetection {
+  id          String   @id @default(cuid())
+  imageId     String
+  editType    EditType @map("edit_type")
+  maskUrl     String   @map("mask_url")
+  confidence  Float
+  suggestions String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  image       Image    @relation(fields: [imageId], references: [id])
+
+  @@index([imageId])
+  @@map("edit_detections")
+}
+
+enum Role {
+  CREATOR
+  VERIFIER
+  ADMIN
+}
+
+enum ImageStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum DetectedLabel {
+  AI_GENERATED
+  AI_ASSISTED
+  ORIGINAL
+  UNCERTAIN
+}
+
+enum EditType {
+  INPAINTING
+  OBJECT_REMOVAL
+  CONTENT_AWARE_SCALE
+}
+
+enum ClaimStatus {
+  PENDING
+  VERIFIED_OWNER
+  VERIFIED_UPLOADER
+  REJECTED
+  APPROVED
+}
+
+model Artwork {
+  id                    String            @id @default(cuid())
+  imageId               String            @unique
+  image                 Image             @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  originalUploaderId    String            @map("original_uploader_id")
+  originalUploader      User              @relation("ArtworkUploader", fields: [originalUploaderId], references: [id])
+  currentOwnerId        String            @map("current_owner_id")
+  currentOwner          User              @relation("ArtworkOwner", fields: [currentOwnerId], references: [id])
+  embeddedProof         Json?             @map("embedded_proof")
+  proofMetadata         Json?             @map("proof_metadata")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+  claims                ArtworkClaim[]
+  ownershipHistory      OwnershipHistory[]
+
+  @@index([originalUploaderId])
+  @@index([currentOwnerId])
+  @@index([imageId])
+  @@map("artworks")
+}
+
+model ArtworkClaim {
+  id            String      @id @default(cuid())
+  artworkId     String      @map("artwork_id")
+  artwork       Artwork     @relation(fields: [artworkId], references: [id], onDelete: Cascade)
+  requesterId   String      @map("requester_id")
+  requester     User        @relation("ClaimRequester", fields: [requesterId], references: [id])
+  reason        String?
+  status        ClaimStatus @default(PENDING)
+  reviewedById  String?     @map("reviewed_by_id")
+  reviewedBy    User?       @relation("ClaimReviewer", fields: [reviewedById], references: [id])
+  reviewedAt    DateTime?   @map("reviewed_at")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  @@index([artworkId])
+  @@index([requesterId])
+  @@index([status])
+  @@map("artwork_claims")
+}
+
+model OwnershipHistory {
+  id            String   @id @default(cuid())
+  artworkId     String   @map("artwork_id")
+  artwork       Artwork  @relation(fields: [artworkId], references: [id], onDelete: Cascade)
+  previousOwnerId String? @map("previous_owner_id")
+  newOwnerId    String   @map("new_owner_id")
+  newOwner      User     @relation(fields: [newOwnerId], references: [id])
+  transferType  String   @map("transfer_type")
+  claimId       String?  @map("claim_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([artworkId])
+  @@index([newOwnerId])
+  @@map("ownership_history")
+}
+
+model Notification {
+  id        String      @id @default(cuid())
+  userId    String      @map("user_id")
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  message   String
+  artworkId String?     @map("artwork_id")
+  claimId   String?     @map("claim_id")
+  read      Boolean     @default(false)
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([read])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model KeyStore {
+  id          String    @id @default(cuid())
+  kid         String    @unique
+  publicKeyPem String   @map("public_key_pem")
+  ownerType   String    @map("owner_type")
+  ownerId     String?   @map("owner_id")
+  revoked     Boolean   @default(false)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  revokedAt   DateTime? @map("revoked_at")
+
+  @@index([kid])
+  @@index([ownerType, ownerId])
+  @@index([revoked])
+  @@map("key_store")
+}
