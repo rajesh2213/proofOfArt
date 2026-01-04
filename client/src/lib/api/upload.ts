@@ -26,7 +26,17 @@ export const uploadImage = async (file: File, imageMetaData: ImageMetaData, clai
                     reject(new Error('Invalid response format'))
                 } 
             } else {
-                reject(new Error(`Upload failed with status ${xhr.status}`))
+                let errorMessage = `Upload failed with status ${xhr.status}`;
+                try {
+                    const errorResponse = JSON.parse(xhr.responseText);
+                    if (errorResponse.error?.message) {
+                        errorMessage = errorResponse.error.message;
+                    } else if (errorResponse.message) {
+                        errorMessage = errorResponse.message;
+                    }
+                } catch (e) {
+                }
+                reject(new Error(errorMessage))
             }
         }
 

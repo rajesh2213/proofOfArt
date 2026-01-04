@@ -15,6 +15,12 @@ export interface JobStatusResponse {
             modelName?: string;
             hasHeatmap?: boolean;
         } | null;
+        tampering?: {
+            detected: boolean;
+            mask_base64: string | null;
+            edited_area_ratio: number;
+            edited_pixels: number;
+        };
         jobStatus?: {
             state: string;
             progress?: number;
