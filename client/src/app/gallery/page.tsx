@@ -196,7 +196,10 @@ export default function GalleryPage() {
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             transition={{ duration: 0.3 }}
-                            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-8"
+                            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6"
+                            style={{ 
+                                gridAutoRows: 'minmax(0, auto)',
+                            }}
                         >
                             {artworks.map((artwork) => (
                                 <ArtCard key={artwork.id} artwork={artwork} />
