@@ -155,7 +155,13 @@ export default function ArtworkDetailPage() {
                         <div className="bg-gray-50 p-4 rounded-lg mb-4">
                             <h3 className="font-semibold mb-2">AI Detection</h3>
                             <p className="text-sm">
-                                Confidence: {(artwork.image.detectionReport.aiProbability * 100).toFixed(1)}%
+                                Confidence: {(() => {
+                                    const isAi = artwork.image.detectionReport.detectedLabel === 'AI_GENERATED';
+                                    const confidence = isAi 
+                                        ? artwork.image.detectionReport.aiProbability 
+                                        : (1 - artwork.image.detectionReport.aiProbability);
+                                    return (confidence * 100).toFixed(1);
+                                })()}%
                             </p>
                             <p className="text-sm">
                                 Label: {artwork.image.detectionReport.detectedLabel}

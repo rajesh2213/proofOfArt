@@ -144,6 +144,39 @@ export default function DrawingLoader({
                 overflow: "hidden",
               }}
             >
+              {/* Proof of Art text - behind the drawn content */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: "100%",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  pointerEvents: "none",
+                  zIndex: 0,
+                }}
+              >
+                <div
+                  style={{
+                    textAlign: "center",
+                    fontFamily: "'Cinzel', serif",
+                    fontWeight: 600,
+                    fontSize: "clamp(16px, 2vw, 32px)",
+                    color: "rgba(0, 0, 0, 0.12)",
+                    letterSpacing: "0.1em",
+                    lineHeight: 1.2,
+                  }}
+                >
+                  <div>Proof</div>
+                  <div>of</div>
+                  <div>Art</div>
+                </div>
+              </div>
+
               <CanvasReveal>
                 {content}
               </CanvasReveal>

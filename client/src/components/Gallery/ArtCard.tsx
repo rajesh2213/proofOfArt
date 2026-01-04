@@ -224,6 +224,8 @@ export default function ArtCard({ artwork }: ArtCardProps) {
                 style={{
                     perspective: '1200px',
                     transformStyle: 'preserve-3d',
+                    transform: 'scale(1.03)',
+                    transformOrigin: 'center center',
                 }}
             >
                 <div

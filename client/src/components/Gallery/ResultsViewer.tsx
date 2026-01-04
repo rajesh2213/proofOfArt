@@ -29,7 +29,8 @@ export default function ResultsViewer({ artwork, isOpen, onClose, onViewFullProo
     const proofMetadata = artwork.proofMetadata as any;
     const isAiGenerated = artwork.image.detectionReport?.detectedLabel === 'AI_GENERATED';
     const hasTamper = (artwork.image.editDetections?.length || 0) > 0;
-    const aiScore = artwork.image.detectionReport?.aiProbability || 0;
+    const aiProbability = artwork.image.detectionReport?.aiProbability || 0;
+    const displayConfidence = isAiGenerated ? aiProbability : (1 - aiProbability);
     const hasProof = !!artwork.proofMetadata || !!artwork.embeddedProof;
     const canDownload = user && (artwork.currentOwnerId === user.id || artwork.originalUploaderId === user.id);
 
@@ -258,7 +259,7 @@ export default function ResultsViewer({ artwork, isOpen, onClose, onViewFullProo
                                         </h3>
                                         <div className="flex items-center justify-between text-white">
                                             <span className="text-white/80 italic">Score:</span>
-                                            <span className="font-medium text-lg">{(aiScore * 100).toFixed(1)}%</span>
+                                            <span className="font-medium text-lg">{(displayConfidence * 100).toFixed(1)}%</span>
                                         </div>
                                     </div>
 

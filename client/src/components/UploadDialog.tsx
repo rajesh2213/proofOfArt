@@ -229,7 +229,7 @@ const UploadDialog: React.FC<UploadDialogProps> = ({ onUploadClick, dialogRef: e
         setError(null);
         break;
       default:
-        setError('Upload failed');
+        setError(res.message || 'Upload failed');
         break;
     }
   }

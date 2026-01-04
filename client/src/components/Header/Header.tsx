@@ -26,6 +26,37 @@ const Header = forwardRef(function Header(props, ref) {
     useEffect(() => {
         setIsDropDownMenuOpen(false);
         setIsUserMenuOpen(false);
+        
+        if (galleryMenuRef.current) {
+            gsap.killTweensOf(galleryMenuRef.current);
+            gsap.set(galleryMenuRef.current, {
+                display: 'none',
+                opacity: 0,
+                height: 0,
+                overflow: 'visible'
+            });
+        }
+        
+        if (typeof document !== 'undefined') {
+            const topBurger = document.querySelector('.top-burger');
+            const bottomBurger = document.querySelector('.bottom-burger');
+            if (topBurger) {
+                gsap.killTweensOf(topBurger);
+                gsap.set(topBurger, {
+                    rotate: 0,
+                    y: 0,
+                    transformOrigin: 'center center',
+                });
+            }
+            if (bottomBurger) {
+                gsap.killTweensOf(bottomBurger);
+                gsap.set(bottomBurger, {
+                    rotate: 0,
+                    y: 0,
+                    transformOrigin: 'center center',
+                });
+            }
+        }
     }, [pathname]);
     const headerRef = useRef<HTMLElement | null>(null);
     const hasAnimatedRef = useRef(false);
@@ -576,15 +607,21 @@ const Header = forwardRef(function Header(props, ref) {
                     className="absolute top-full left-0 w-full z-49"
                     style={{
                         fontFamily: "var(--font-mono), 'Courier New', Courier, monospace",
-                        background: 'rgba(15, 15, 15, 0)',
-                        backdropFilter: 'blur(0px)',
+                        background: isUploadArtPage || isAuthPage || isGalleryPage 
+                            ? 'rgba(255, 255, 255, 0.95)' 
+                            : 'rgba(15, 15, 15, 0)',
+                        backdropFilter: isUploadArtPage || isAuthPage || isGalleryPage 
+                            ? 'blur(12px)' 
+                            : 'blur(0px)',
                         WebkitBackdropFilter: 'blur(12px)',
                         borderLeft: `2px solid ${isUploadArtPage || isAuthPage || isGalleryPage ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)'}`,
                         borderRight: `2px solid ${isUploadArtPage || isAuthPage || isGalleryPage ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)'}`,
                         borderBottom: `2px solid ${isUploadArtPage || isAuthPage || isGalleryPage ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)'}`,
                         borderTop: 'none',
                         borderRadius: '0',
-                        boxShadow: '0 4px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.1)',
+                        boxShadow: isUploadArtPage || isAuthPage || isGalleryPage
+                            ? '0 4px 20px rgba(0,0,0,0.15), inset 0 1px 0 rgba(0,0,0,0.05)'
+                            : '0 4px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.1)',
                         display: 'none',
                         opacity: 0,
                         height: 0,
@@ -598,8 +635,10 @@ const Header = forwardRef(function Header(props, ref) {
                         <div className="flex flex-col items-center justify-center gap-0">
                             <button
                                 onClick={() => handleNavigateToGallery('/gallery')}
-                                className={`flex-1 text-center px-4 py-3 text-white hover:bg-white/20 transition-colors font-normal cursor-pointer w-full ${
-                                    pathname === '/gallery' ? 'bg-white/10' : ''
+                                className={`flex-1 text-center px-4 py-3 transition-colors font-normal cursor-pointer w-full ${
+                                    isUploadArtPage || isAuthPage || isGalleryPage
+                                        ? `text-black hover:bg-black/10 ${pathname === '/gallery' ? 'bg-black/10' : ''}`
+                                        : `text-white hover:bg-white/20 ${pathname === '/gallery' ? 'bg-white/10' : ''}`
                                 }`}
                                 style={{ fontWeight: 400, fontSize: '18px' }}
                             >
@@ -608,7 +647,11 @@ const Header = forwardRef(function Header(props, ref) {
 
                         </div>
                     ) : (
-                        <div className="px-4 py-3 text-white/70 text-sm text-center">
+                        <div className={`px-4 py-3 text-sm text-center ${
+                            isUploadArtPage || isAuthPage || isGalleryPage 
+                                ? 'text-black/70' 
+                                : 'text-white/70'
+                        }`}>
                             Please log in to view your gallery
                         </div>
                     )}

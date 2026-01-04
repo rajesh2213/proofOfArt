@@ -42,10 +42,11 @@ export default function UploadArtPageClient(): JSX.Element {
               is_ai_generated: data.result?.detectedLabel === 'AI_GENERATED',
               confidence: data.result?.aiProbability || 0
             },
-            tampering: {
-              is_edited: false,
-              mask_pixesls: 0,
-              mask_base64: ''
+            tampering: data.tampering || {
+              detected: false,
+              edited_pixels: 0,
+              edited_area_ratio: 0.0,
+              mask_base64: null
             }
           }
         }));
@@ -704,13 +705,13 @@ export default function UploadArtPageClient(): JSX.Element {
               height: "auto",
               minHeight: "calc(100vh - 160px)",
               maxHeight: "calc(100vh - 160px)",
-              backgroundColor: "#0a0a0a",
+              backgroundColor: "rgba(255, 255, 255, 0.95)",
               borderRadius: "16px",
-              boxShadow: "0 25px 80px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.05)"
+              boxShadow: "0 25px 80px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.1)"
             }}
           >
             {/* Image Section - Top Center */}
-            <div className="flex-shrink-0 flex items-center justify-center py-8 px-12" style={{ backgroundColor: "#0a0a0a" }}>
+            <div className="flex-shrink-0 flex items-center justify-center py-8 px-12" style={{ backgroundColor: "rgba(255, 255, 255, 0.95)" }}>
               <div 
                 className="relative"
                 style={{ 
@@ -722,7 +723,7 @@ export default function UploadArtPageClient(): JSX.Element {
                 }}
               >
                 <div className="relative rounded-xl overflow-hidden" style={{
-                  boxShadow: "0 20px 60px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.1)"
+                  boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.1)"
                 }}>
                   <div className="relative">
                     <img
@@ -746,7 +747,7 @@ export default function UploadArtPageClient(): JSX.Element {
                       />
                     )}
                             
-                    {uploadComplete.inference?.tampering?.is_edited &&
+                    {uploadComplete.inference?.tampering?.detected &&
                      uploadComplete.inference?.tampering?.mask_base64 && (
                       <div 
                         className="absolute inset-0 pointer-events-none transition-opacity duration-300"
@@ -763,7 +764,7 @@ export default function UploadArtPageClient(): JSX.Element {
                     )}
                   </div>
                           
-                  {uploadComplete.inference?.tampering?.is_edited &&
+                  {uploadComplete.inference?.tampering?.detected &&
                    uploadComplete.inference?.tampering?.mask_base64 && (
                     <button
                       onClick={() => setShowMask(!showMask)}
@@ -789,7 +790,7 @@ export default function UploadArtPageClient(): JSX.Element {
             </div>
 
             {/* Results Section - Directly below image, no nested container */}
-            <div className="flex-shrink-0 px-12 pb-16 pt-8" style={{ backgroundColor: "#0a0a0a" }}>
+            <div className="flex-shrink-0 px-12 pb-16 pt-8" style={{ backgroundColor: "rgba(250, 248, 255, 0.98)" }}>
               {uploadComplete.inference && (
                 <div 
                   className="max-w-5xl mx-auto"
@@ -800,9 +801,9 @@ export default function UploadArtPageClient(): JSX.Element {
                   }}
                 >
                   {/* Section Title - Clean typography with subtle divider */}
-                  <div className="mb-8 pb-6 border-b border-white/10">
+                  <div className="mb-8 pb-6 border-b border-black/10">
                     <h3 
-                      className="font-bold text-2xl text-white tracking-wider text-left" 
+                      className="font-bold text-2xl text-black tracking-wider text-left" 
                       style={{ 
                         letterSpacing: "0.1em",
                         fontFamily: "var(--font-mono), 'Courier New', Courier, monospace"
@@ -812,16 +813,16 @@ export default function UploadArtPageClient(): JSX.Element {
                     </h3>
                   </div>
 
-                  {/* Results Cards - Glassmorphism effect */}
+                  {/* Results Cards - Bright white/pink theme */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Generation Type Card */}
                     <div 
-                      className="p-6 rounded-xl"
+                      className="p-6 rounded-xl border-2"
                       style={{
-                        background: "rgba(255, 255, 255, 0.05)",
-                        backdropFilter: "blur(20px)",
-                        border: "1px solid rgba(255, 255, 255, 0.1)",
-                        boxShadow: "0 8px 32px rgba(0, 0, 0, 0.3)"
+                        background: "rgba(255, 255, 255, 0.5)",
+                        backdropFilter: "blur(8px)",
+                        borderColor: "rgba(0, 0, 0, 0.2)",
+                        boxShadow: "inset 0 1px 1px rgba(255, 255, 255, 0.3), 0 2px 8px rgba(0, 0, 0, 0.1)"
                       }}
                     >
                       <div className="flex items-center gap-3 mb-4">
@@ -834,9 +835,9 @@ export default function UploadArtPageClient(): JSX.Element {
                             boxShadow: `0 0 20px ${uploadComplete.inference.predictions?.is_ai_generated ? 'rgba(239, 68, 68, 0.5)' : 'rgba(16, 185, 129, 0.5)'}`
                           }}
                         />
-                        <h4 className="font-semibold text-white text-lg tracking-wide">Generation Type</h4>
+                        <h4 className="font-semibold text-black text-lg tracking-wide">Generation Type</h4>
                       </div>
-                      <p className="text-white/80 text-sm mb-2 font-medium">
+                      <p className="text-black/80 text-sm mb-2 font-medium">
                         {uploadComplete.inference.predictions?.is_ai_generated 
                           ? "AI-Generated" 
                           : "Human-Created"}
@@ -844,11 +845,11 @@ export default function UploadArtPageClient(): JSX.Element {
                       <div className="mt-3">
                         {uploadComplete.inference.predictions?.is_ai_generated ? (
                           <>
-                            <div className="flex justify-between text-xs text-white/60 mb-1">
+                            <div className="flex justify-between text-xs text-black/60 mb-1">
                               <span>Confidence (AI-Generated)</span>
                               <span>{(uploadComplete.inference.predictions?.confidence * 100 || 0).toFixed(1)}%</span>
                             </div>
-                            <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                            <div className="w-full h-2 bg-black/10 rounded-full overflow-hidden">
                               <div 
                                 className="h-full transition-all duration-500"
                                 style={{
@@ -861,11 +862,11 @@ export default function UploadArtPageClient(): JSX.Element {
                           </>
                         ) : (
                           <>
-                            <div className="flex justify-between text-xs text-white/60 mb-1">
+                            <div className="flex justify-between text-xs text-black/60 mb-1">
                               <span>Confidence (Human-Created)</span>
                               <span>{((1 - (uploadComplete.inference.predictions?.confidence || 0)) * 100).toFixed(1)}%</span>
                             </div>
-                            <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                            <div className="w-full h-2 bg-black/10 rounded-full overflow-hidden">
                               <div 
                                 className="h-full transition-all duration-500"
                                 style={{
@@ -882,34 +883,70 @@ export default function UploadArtPageClient(): JSX.Element {
 
                     {/* Tampering Card */}
                     <div 
-                      className="p-6 rounded-xl"
+                      className="p-6 rounded-xl border-2"
                       style={{
-                        background: "rgba(255, 255, 255, 0.05)",
-                        backdropFilter: "blur(20px)",
-                        border: "1px solid rgba(255, 255, 255, 0.1)",
-                        boxShadow: "0 8px 32px rgba(0, 0, 0, 0.3)"
+                        background: uploadComplete.inference.tampering?.detected 
+                          ? "rgba(245, 158, 11, 0.15)" 
+                          : "rgba(255, 255, 255, 0.5)",
+                        backdropFilter: "blur(8px)",
+                        borderColor: uploadComplete.inference.tampering?.detected 
+                          ? "rgba(245, 158, 11, 0.4)" 
+                          : "rgba(0, 0, 0, 0.2)",
+                        boxShadow: uploadComplete.inference.tampering?.detected
+                          ? "inset 0 1px 1px rgba(255, 255, 255, 0.3), 0 2px 8px rgba(245, 158, 11, 0.3)"
+                          : "inset 0 1px 1px rgba(255, 255, 255, 0.3), 0 2px 8px rgba(0, 0, 0, 0.1)"
                       }}
                     >
                       <div className="flex items-center gap-3 mb-4">
                         <div 
                           className="w-3 h-3 rounded-full"
                           style={{
-                            background: uploadComplete.inference.tampering?.is_edited 
+                            background: uploadComplete.inference.tampering?.detected 
                               ? "linear-gradient(135deg, #f59e0b, #d97706)" 
                               : "linear-gradient(135deg, #10b981, #059669)",
-                            boxShadow: `0 0 20px ${uploadComplete.inference.tampering?.is_edited ? 'rgba(245, 158, 11, 0.5)' : 'rgba(16, 185, 129, 0.5)'}`
+                            boxShadow: `0 0 20px ${uploadComplete.inference.tampering?.detected ? 'rgba(245, 158, 11, 0.5)' : 'rgba(16, 185, 129, 0.5)'}`
                           }}
                         />
-                        <h4 className="font-semibold text-white text-lg tracking-wide">Tampering</h4>
+                        <h4 className="font-semibold text-black text-lg tracking-wide">Tampering</h4>
                       </div>
-                      <p className="text-white/80 text-sm mb-2">
-                        {uploadComplete.inference.tampering?.is_edited 
-                          ? "Image has been edited" 
-                          : "No tampering detected"}
-                      </p>
-                      {uploadComplete.inference.tampering?.is_edited && (
-                        <p className="text-white/60 text-xs mt-2">
-                          Edited pixels: {uploadComplete.inference.tampering.mask_pixesls?.toLocaleString() || 0}
+                      {uploadComplete.inference.tampering?.detected ? (
+                        <>
+                          <div className="mb-3">
+                            <p className="text-black font-semibold text-sm mb-1">
+                              ⚠️ Image has been edited
+                            </p>
+                            <p className="text-black/70 text-xs">
+                              Tampering detected in this image
+                            </p>
+                          </div>
+                          <div className="space-y-2 pt-3 border-t border-black/10">
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-black/70">Edited Area:</span>
+                              <span className="text-black font-semibold">
+                                {(uploadComplete.inference.tampering.edited_area_ratio * 100 || 0).toFixed(2)}%
+                              </span>
+                            </div>
+                            <div className="w-full h-2 bg-black/10 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full transition-all duration-500"
+                                style={{
+                                  width: `${(uploadComplete.inference.tampering.edited_area_ratio * 100 || 0)}%`,
+                                  background: "linear-gradient(90deg, #f59e0b, #d97706)",
+                                  boxShadow: "0 0 10px rgba(245, 158, 11, 0.6)"
+                                }}
+                              />
+                            </div>
+                            <div className="flex justify-between items-center text-xs pt-1">
+                              <span className="text-black/70">Edited Pixels:</span>
+                              <span className="text-black font-semibold">
+                                {uploadComplete.inference.tampering.edited_pixels?.toLocaleString() || 0}
+                              </span>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-black/80 text-sm">
+                          ✓ No tampering detected
                         </p>
                       )}
                     </div>
