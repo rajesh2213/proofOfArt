@@ -86,6 +86,33 @@ export class InferenceQueueService {
     ): Promise<{ jobId: string }> {
         try {
             const queue = await this.getQueue();
+            const jobId = `inference-${imageId}`;
+            
+            const existingJob = await queue.getJob(jobId);
+            if (existingJob) {
+                const existingState = await existingJob.getState();
+                logger.info('Existing job found', {
+                    jobId,
+                    imageId,
+                    existingState
+                });
+                
+                if (existingState === 'completed' || existingState === 'failed') {
+                    await existingJob.remove();
+                    logger.info('Removed existing completed/failed job to allow reprocessing', {
+                        jobId,
+                        imageId,
+                        previousState: existingState
+                    });
+                } else if (existingState === 'active' || existingState === 'waiting' || existingState === 'delayed') {
+                    logger.info('Job already in queue, skipping duplicate', {
+                        jobId,
+                        imageId,
+                        existingState
+                    });
+                    return { jobId };
+                }
+            }
             
             const jobData: InferenceJobData = {
                 imageId,
@@ -97,15 +124,20 @@ export class InferenceQueueService {
                 jobData,
                 {
                     priority,
-                    jobId: `inference-${imageId}`, 
+                    jobId, 
                 }
             );
 
+            // Get job state to verify it was added
+            const jobState = await job.getState();
+            
             logger.info('Inference job queued', {
                 jobId: job.id,
                 imageId,
                 imageUrl: imageUrl.substring(0, 50) + '...',
-                priority
+                priority,
+                jobState,
+                queueName: this.queueName
             });
 
             return { jobId: job.id! };

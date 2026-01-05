@@ -45,6 +45,17 @@ export const getImageStatus = catchAsync(async (req: Request, res: Response): Pr
         statusValue = 'pending';
     }
 
+    const hasTampering = (image.editDetections?.length || 0) > 0;
+    const editDetection = hasTampering ? image.editDetections?.[0] : null;
+    
+    let editedPixels = 0;
+    if (editDetection?.suggestions) {
+        const pixelsMatch = editDetection.suggestions.match(/\((\d+)\s+pixels\)/);
+        if (pixelsMatch) {
+            editedPixels = parseInt(pixelsMatch[1], 10);
+        }
+    }
+
     const status = {
         imageId: image.id,
         status: statusValue,
@@ -56,6 +67,17 @@ export const getImageStatus = catchAsync(async (req: Request, res: Response): Pr
             modelName: image.detectionReport.modelName,
             hasHeatmap: !!image.detectionReport.heatmapUrl
         } : null,
+        tampering: hasTampering && editDetection ? {
+            detected: true,
+            mask_base64: editDetection.maskUrl,
+            edited_area_ratio: editDetection.confidence, 
+            edited_pixels: editedPixels
+        } : {
+            detected: false,
+            mask_base64: null,
+            edited_area_ratio: 0.0,
+            edited_pixels: 0
+        },
         jobStatus: jobStatus?.exists ? {
             state: jobStatus.state,
             progress: jobStatus.progress,

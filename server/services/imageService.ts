@@ -89,7 +89,8 @@ export class ImageService {
                 where: { id },
                 include: {
                     imageClaims: includeClaims,
-                    detectionReport: true
+                    detectionReport: true,
+                    editDetections: true
                 }
             });
             return image as unknown as ImageModel | null;

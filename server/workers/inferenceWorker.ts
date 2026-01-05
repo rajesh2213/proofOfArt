@@ -24,7 +24,6 @@ export class InferenceWorker {
 
     async start(): Promise<void> {
         if (this.worker) {
-            logger.warn('Inference worker already started');
             return;
         }
 
@@ -51,25 +50,6 @@ export class InferenceWorker {
                 workerOptions
             );
 
-            this.worker.on('active', (job) => {
-                logger.info('Worker: Job picked up and starting', {
-                    jobId: job.id,
-                    imageId: job.data.imageId,
-                    imageUrl: job.data.imageUrl?.substring(0, 50) + '...'
-                });
-            });
-
-            this.worker.on('completed', (job) => {
-                this.metrics.jobsProcessed++;
-                this.metrics.jobsCompleted++;
-                this.metrics.lastJobProcessedAt = new Date();
-                logger.info('Worker: Job completed', {
-                    jobId: job.id,
-                    imageId: job.data.imageId,
-                    totalCompleted: this.metrics.jobsCompleted
-                });
-            });
-
             this.worker.on('failed', (job, err) => {
                 this.metrics.jobsProcessed++;
                 this.metrics.jobsFailed++;
@@ -88,18 +68,8 @@ export class InferenceWorker {
                 logger.error('Worker: Error', { error: error.message });
             });
 
-            this.worker.on('stalled', (jobId) => {
-                logger.warn('Worker: Job stalled', { jobId });
-            });
-
             this.isRunning = true;
             this.startTime = new Date();
-            
-            logger.info('Inference worker started', {
-                queueName: this.queueName,
-                concurrency: workerOptions.concurrency,
-                startTime: this.startTime.toISOString()
-            });
         } catch (error: any) {
             logger.error('Failed to start inference worker', {
                 error: error.message
@@ -108,19 +78,8 @@ export class InferenceWorker {
         }
     }
 
-    /**
-     * Processes an inference job
-     */
     private async processJob(job: Job<InferenceJobData>): Promise<void> {
         const { imageId, imageUrl } = job.data;
-        
-        logger.info('Worker: Processing inference job - START', {
-            jobId: job.id,
-            imageId,
-            imageUrl: imageUrl?.substring(0, 50) + '...',
-            attemptsMade: job.attemptsMade,
-            timestamp: new Date().toISOString()
-        });
 
         try {
             await imageService.updateStatus(imageId, 'PROCESSING');
@@ -145,30 +104,13 @@ export class InferenceWorker {
                     headers: { 'Accept': 'application/json' },
                     signal: AbortSignal.timeout(5000)
                 });
-                
-                if (!healthResponse.ok) {
-                    logger.warn('Inference service health check failed', {
-                        status: healthResponse.status,
-                        imageId
-                    });
-                }
             } catch (healthError: any) {
-                logger.warn('Inference service health check error', {
-                    error: healthError.message,
-                    imageId
-                });
             }
 
             await job.updateProgress(30);
 
             const requestBody = { image_url: imageUrl };
             const inferenceTimeout = parseInt(process.env.INFERENCE_TIMEOUT || '120000', 10);
-
-            logger.info('Calling inference service', {
-                imageId,
-                inferenceUrl,
-                timeout: inferenceTimeout
-            });
 
             const inferResponse = await fetch(inferenceUrl, {
                 method: 'POST',
@@ -199,30 +141,48 @@ export class InferenceWorker {
             const inferenceResult: InferenceResponse = await inferResponse.json() as InferenceResponse;
             await job.updateProgress(80);
 
-            logger.info('Inference service response received', {
-                imageId,
-                is_ai_generated: inferenceResult.predictions.is_ai_generated,
-                is_edited: inferenceResult.tampering.is_edited,
-                confidence: inferenceResult.predictions.confidence
-            });
-
             try {
+                let detectedLabel: 'AI_GENERATED' | 'ORIGINAL' = 'ORIGINAL';
+                if (inferenceResult.predictions.is_ai_generated) {
+                    detectedLabel = 'AI_GENERATED';
+                }
+                
                 await prisma.detectionReport.upsert({
                     where: { imageId },
                     update: {
                         aiProbability: inferenceResult.predictions.confidence,
-                        detectedLabel: inferenceResult.predictions.is_ai_generated ? 'AI_GENERATED' : 'ORIGINAL',
-                        modelName: 'multihead_model',
+                        detectedLabel: detectedLabel,
+                        modelName: 'standalone_models',
                         heatmapUrl: inferenceResult.tampering.mask_base64 || null,
                     },
                     create: {
                         imageId,
                         aiProbability: inferenceResult.predictions.confidence,
-                        detectedLabel: inferenceResult.predictions.is_ai_generated ? 'AI_GENERATED' : 'ORIGINAL',
-                        modelName: 'multihead_model',
+                        detectedLabel: detectedLabel,
+                        modelName: 'standalone_models',
                         heatmapUrl: inferenceResult.tampering.mask_base64 || null,
                     }
                 });
+
+                if (inferenceResult.tampering.detected && inferenceResult.tampering.mask_base64) {
+                    await prisma.editDetection.deleteMany({
+                        where: { imageId }
+                    });
+
+                    await prisma.editDetection.create({
+                        data: {
+                            imageId,
+                            editType: 'INPAINTING', 
+                            maskUrl: inferenceResult.tampering.mask_base64,
+                            confidence: inferenceResult.tampering.edited_area_ratio, 
+                            suggestions: `Edited area: ${(inferenceResult.tampering.edited_area_ratio * 100).toFixed(2)}% (${inferenceResult.tampering.edited_pixels} pixels)`
+                        }
+                    });
+                } else {
+                    await prisma.editDetection.deleteMany({
+                        where: { imageId }
+                    });
+                }
 
                 await job.updateProgress(90);
             } catch (dbError: any) {
@@ -236,7 +196,7 @@ export class InferenceWorker {
             await imageService.updateStatus(imageId, 'COMPLETED');
             await job.updateProgress(100);
 
-            logger.info('Worker: Inference job completed successfully - END', {
+            logger.info('Worker: Inference job completed successfully', {
                 jobId: job.id,
                 imageId,
                 timestamp: new Date().toISOString()
@@ -246,8 +206,11 @@ export class InferenceWorker {
                 jobId: job.id,
                 imageId,
                 error: error.message,
+                errorName: error.name,
+                errorStack: error.stack,
                 attemptsMade: job.attemptsMade,
-                maxAttempts: job.opts.attempts
+                maxAttempts: job.opts.attempts,
+                inferBaseUrl: process.env.INFER_BASE_URL
             });
 
             if (job.attemptsMade >= (job.opts.attempts || 3)) {
@@ -315,10 +278,10 @@ export class InferenceWorker {
                 const healthResponse = await fetch(healthCheckUrl, {
                     method: 'GET',
                     headers: { 'Accept': 'application/json' },
-                    signal: AbortSignal.timeout(3000)
+                    signal: AbortSignal.timeout(5000) 
                 });
                 inferenceServiceAvailable = healthResponse.ok;
-            } catch (error) {
+            } catch (error: any) {
                 inferenceServiceAvailable = false;
             }
         }
@@ -360,7 +323,6 @@ export class InferenceWorker {
             lastError: null as string | null,
         };
         this.metrics = metrics;
-        logger.info('Worker metrics reset');
     }
 }
 

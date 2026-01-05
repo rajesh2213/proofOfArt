@@ -1,13 +1,15 @@
 
 export type AIPrediction = {
     is_ai_generated: boolean;
+    is_uncertain: boolean; 
     confidence: number;
 }
 
 export type Tampering = {
-    is_edited: boolean;
-    mask_pixesls: number;
-    mask_base64: string;
+    detected: boolean;  
+    mask_base64: string | null; 
+    edited_area_ratio: number;  
+    edited_pixels: number;  
 }
 
 export type InferenceResponse = {

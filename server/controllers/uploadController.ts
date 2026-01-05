@@ -41,8 +41,12 @@ export const handleUpload = catchAsync(async (req: Request, res: Response, next:
     logger.info('Upload request received', {
         hasUser: !!((req as any).user),
         userId: userId || 'null',
+        userEmail: (req as any).user?.email || 'null',
+        userRole: (req as any).user?.role || 'null',
+        isAnonymous: (req as any).user?.isAnonymous || 'null',
         isMadeByUser: isMadeByUser,
-        isAuthenticated: userId !== null
+        isAuthenticated: userId !== null,
+        hasAuthHeader: !!req.headers.authorization
     });
 
     fileValidationService.validateFile(file);
@@ -50,13 +54,6 @@ export const handleUpload = catchAsync(async (req: Request, res: Response, next:
     try {
         const fileBuffer = file.buffer;
         const imgHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
-
-        logger.info('File upload processed', {
-            filename: file.originalname,
-            mimetype: file.mimetype,
-            size: file.size,
-            hash: imgHash
-        });
 
         let image = await imageService.getImageByHash(imgHash, true);
         let cloudinaryResult: CloudinaryResource | null = null;
@@ -115,7 +112,7 @@ export const handleUpload = catchAsync(async (req: Request, res: Response, next:
                     imageId: null,
                 }
             });
-            throw new ValidationError('Image creation failed', 'image');
+            return;
         }
 
         const sessionId = req.sessionID || null;
@@ -124,7 +121,6 @@ export const handleUpload = catchAsync(async (req: Request, res: Response, next:
 
         if (isGuestUser) {
             userId = (await userService.createGuestUser())?.id || null;
-            logger.info('Guest user created', { userId });
         }
 
         if (!userId) {
@@ -138,7 +134,7 @@ export const handleUpload = catchAsync(async (req: Request, res: Response, next:
                 errorCode: 'GUEST_USERS_CANNOT_CLAIM_ART',
                 data: null
             });
-            throw new ValidationError('Guest users cannot claim images', 'isMadeByUser');
+            return;
         }
 
         let imageClaim: ImageClaim | null = null;
@@ -244,10 +240,6 @@ export const handleUpload = catchAsync(async (req: Request, res: Response, next:
                     try {
                         await inferenceQueueService.queueInference(image.id, image.url);
                         inferenceQueued = true;
-                        logger.info('Inference job queued successfully', {
-                            imageId: image.id,
-                            imageUrl: image.url.substring(0, 50) + '...'
-                        });
                     } catch (queueError: any) {
                         logger.error('Error queueing inference job', {
                             error: queueError.message,
@@ -262,12 +254,14 @@ export const handleUpload = catchAsync(async (req: Request, res: Response, next:
                 inferenceResult = {
                     predictions: {
                         is_ai_generated: image.detectionReport.detectedLabel === 'AI_GENERATED',
+                        is_uncertain: false, 
                         confidence: image.detectionReport.aiProbability
                     },
                     tampering: {
-                        is_edited: false,
-                        mask_pixesls: 0,
-                        mask_base64: image.detectionReport.heatmapUrl || ''
+                        detected: false,
+                        mask_base64: null,
+                        edited_area_ratio: 0.0,
+                        edited_pixels: 0
                     }
                 };
             }
@@ -285,7 +279,7 @@ export const handleUpload = catchAsync(async (req: Request, res: Response, next:
                     if (inferenceResult) {
                         aiScore = inferenceResult.predictions.confidence;
                         isAiGenerated = inferenceResult.predictions.is_ai_generated;
-                        tamperDetected = inferenceResult.tampering.is_edited;
+                        tamperDetected = inferenceResult.tampering.detected;
                     } else if (image.detectionReport) {
                         aiScore = image.detectionReport.aiProbability;
                         isAiGenerated = image.detectionReport.detectedLabel === 'AI_GENERATED';
@@ -323,14 +317,6 @@ export const handleUpload = catchAsync(async (req: Request, res: Response, next:
                 });
             }
         }
-
-        logger.info('File upload and processing completed successfully', {
-            fileHash: imgHash,
-            originalName: file.originalname,
-            size: file.size,
-            isNewImage,
-            hasInference: !!inferenceResult
-        });
 
         res.status(200).json({
             success: true,
