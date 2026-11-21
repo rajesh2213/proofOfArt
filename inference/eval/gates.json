@@ -1,0 +1,88 @@
+{
+  "min_samples": 50,
+  "absolute": [
+    {
+      "id": "q1_cross_generator_balanced_acc",
+      "path": "classification.results.clean.external.cross_generator*.balanced_acc@api",
+      "op": ">=",
+      "value": 0.90,
+      "n_path": "classification.results.clean.external.cross_generator*.n"
+    },
+    {
+      "id": "q1_hard_fakes_auc",
+      "path": "classification.results.clean.external.hard_fakes*.auc",
+      "op": ">=",
+      "value": 0.85,
+      "n_path": "classification.results.clean.external.hard_fakes*.n"
+    },
+    {
+      "id": "q1_human_art_fpr",
+      "path": "classification.results.clean.by_source.wikiart.fpr@api",
+      "op": "<",
+      "value": 0.05,
+      "n_path": "classification.results.clean.by_source.wikiart.n"
+    },
+    {
+      "id": "q1_jpeg70_auc_drop",
+      "path": "classification.results.jpeg70.overall.auc",
+      "op": "drop_from",
+      "ref": "classification.results.clean.overall.auc",
+      "value": 0.03
+    },
+    {
+      "id": "q1_social_auc",
+      "path": "classification.results.social.overall.auc",
+      "op": ">=",
+      "value": 0.90
+    },
+    {
+      "id": "q2_ai_edit_iou",
+      "path": "localization.results.clean.tampered_by_family.ai_local_edit.iou_mean",
+      "op": ">=",
+      "value": 0.45,
+      "n_path": "localization.results.clean.tampered_by_family.ai_local_edit.n"
+    },
+    {
+      "id": "q2_ai_edit_f1",
+      "path": "localization.results.clean.tampered_by_family.ai_local_edit.f1_mean",
+      "op": ">=",
+      "value": 0.55,
+      "n_path": "localization.results.clean.tampered_by_family.ai_local_edit.n"
+    },
+    {
+      "id": "q2_object_removal_iou",
+      "path": "localization.results.clean.external.object_removal*.tampered.iou_mean",
+      "op": ">=",
+      "value": 0.45,
+      "n_path": "localization.results.clean.external.object_removal*.tampered.n"
+    },
+    {
+      "id": "q2_hallucination_rate",
+      "path": "localization.results.clean.pristine_all.hallucination_rate",
+      "op": "<",
+      "value": 0.02,
+      "n_path": "localization.results.clean.pristine_all.n"
+    },
+    {
+      "id": "latency_classifier_p95_ms",
+      "path": "latency.classifier.p95_ms",
+      "op": "<",
+      "value": 400
+    },
+    {
+      "id": "latency_localizer_p95_ms",
+      "path": "latency.localizer.p95_ms",
+      "op": "<",
+      "value": 400
+    }
+  ],
+  "vs_baseline": [
+    {"id": "q1_clean_auc", "path": "classification.results.clean.overall.auc", "higher_is_better": true, "tolerance": 0.0},
+    {"id": "q1_jpeg70_auc", "path": "classification.results.jpeg70.overall.auc", "higher_is_better": true, "tolerance": 0.0},
+    {"id": "q1_social_auc", "path": "classification.results.social.overall.auc", "higher_is_better": true, "tolerance": 0.0},
+    {"id": "q1_fpr_at_tpr95", "path": "classification.results.clean.overall.fpr@tpr95%", "higher_is_better": false, "tolerance": 0.0},
+    {"id": "q2_ai_edit_iou", "path": "localization.results.clean.tampered_by_family.ai_local_edit.iou_mean", "higher_is_better": true, "tolerance": 0.0},
+    {"id": "q2_ai_edit_iou_social", "path": "localization.results.social.tampered_by_family.ai_local_edit.iou_mean", "higher_is_better": true, "tolerance": 0.0},
+    {"id": "q2_hallucination_rate", "path": "localization.results.clean.pristine_all.hallucination_rate", "higher_is_better": false, "tolerance": 0.0}
+  ]
+}

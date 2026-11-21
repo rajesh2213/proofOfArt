@@ -1,0 +1,84 @@
+{
+  "split_version": "v1",
+  "built_at": "2026-11-17T21:21:02.010886+00:00",
+  "frozen_rows_reused": 50281,
+  "near_duplicate_group_merges": 46,
+  "near_duplicate_skipped_cross_source": 31,
+  "near_duplicate_skipped_split_conflict": 0,
+  "groups_spanning_splits": 0,
+  "external_near_duplicates_of_train": 0,
+  "classification": {
+    "by_split_label": {
+      "test|0": 2155,
+      "test|1": 2203,
+      "train|0": 10893,
+      "train|1": 10592,
+      "val|0": 2129,
+      "val|1": 2205
+    },
+    "by_split_source": {
+      "test|coco": 586,
+      "test|diffusiondb": 752,
+      "test|laion": 445,
+      "test|ld": 715,
+      "test|sd": 736,
+      "test|wikiart": 1124,
+      "train|coco": 2815,
+      "train|diffusiondb": 3497,
+      "train|laion": 2251,
+      "train|ld": 3556,
+      "train|sd": 3539,
+      "train|wikiart": 5827,
+      "val|coco": 601,
+      "val|diffusiondb": 751,
+      "val|laion": 476,
+      "val|ld": 729,
+      "val|sd": 725,
+      "val|wikiart": 1052
+    },
+    "groups": 22895
+  },
+  "localization": {
+    "by_split_family": {
+      "test|ai_local_edit": 79,
+      "test|pristine": 1076,
+      "test|traditional_edit": 1068,
+      "train|ai_local_edit": 2818,
+      "train|pristine": 9485,
+      "train|traditional_edit": 6929,
+      "val|ai_local_edit": 49,
+      "val|pristine": 1302,
+      "val|traditional_edit": 1298
+    },
+    "by_split_source": {
+      "test|coco": 19,
+      "test|gen_coco": 8,
+      "test|gen_laion": 6,
+      "test|gen_wikiart": 14,
+      "test|imd2020": 2120,
+      "test|laion": 2,
+      "test|wikiart": 54,
+      "train|coco": 105,
+      "train|gen_coco": 2428,
+      "train|gen_laion": 1660,
+      "train|gen_wikiart": 4312,
+      "train|imd2020": 10518,
+      "train|laion": 8,
+      "train|wikiart": 201,
+      "val|coco": 22,
+      "val|imd2020": 2596,
+      "val|laion": 4,
+      "val|wikiart": 27
+    },
+    "groups": 4264
+  },
+  "missing_required_slices": {
+    "classification_cross_generator": "Synthetic images from a generator absent from training (eval/external/<name>/fake + real).",
+    "classification_hard_fakes": "Chameleon-style photorealistic fakes that fool humans.",
+    "localization_object_removal": "Object-removal edits (LaMa / Flux Fill / commercial erasers) with masks."
+  },
+  "notes": [
+    "Real-image groups for COCO/LAION and generator groups for SD/LD/DiffusionDB fall back to file stem because prompt, artist and uploader metadata is not stored.",
+    "IMD2020 is manual (non-AI) tampering and is reported as traditional_edit."
+  ]
+}

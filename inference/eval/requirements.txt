@@ -1,0 +1,11 @@
+# Pinned so frozen baseline numbers are reproducible. Python 3.10.
+tensorflow==2.21.0
+keras==3.12.4
+numpy==2.2.6
+pandas==2.3.3
+scikit-learn==1.7.2
+scipy==1.15.3
+pillow==12.3.0
+h5py==3.14.0
+tqdm==4.70.1
+pytest>=8
