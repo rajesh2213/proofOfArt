@@ -1,5 +1,8 @@
 node_modules/
 
+# local design/docs notes
+docs/
+
 dist/
 *.tsbuildinfo
 

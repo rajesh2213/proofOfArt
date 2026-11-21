@@ -1,0 +1,5 @@
+# secrets / local junk at repo root
+*.pem
+tatus
+COMMIT_COMMANDS.md
+RESUME_AND_INTERVIEW.md

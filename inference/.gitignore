@@ -28,6 +28,29 @@ ENV/
 env.bak/
 venv.bak/
 .venv/
+.venv-eval/
+.venv-gen/
+.pytest_cache/
+
+# eval harness: frozen splits and baselines are committed, run outputs and external data are not
+eval/reports/
+eval/external/
+
+# generated edit images (manifests under dataset/manifests/ai_edits/ are kept)
+dataset/images/ai_edits/
+
+# runtime feedback job state
+dataset/feedback/
+
+# Colab upload bundles (large)
+colab_bundle/
+
+# local junk / secrets
+=1.9.0
+*.pem
+
+# keep markdown docs out of this tree (project README lives at repo root)
+*.md
 
 .vscode/
 .idea/
@@ -92,8 +115,6 @@ core/models/*/logs/
 dataset/logs/
 *.txt
 !requirements.txt
-!readme.md
-!README.md
 
 dataset/images/
 dataset/raw/
