@@ -7,6 +7,12 @@ export type ImageModel = {
   metadata: any;
   imageClaims: ImageClaim[];
   detectionReport?: DetectionReport | null;
+  editDetections?: Array<{
+    editType: string;
+    maskUrl: string;
+    confidence: number;
+    suggestions?: string | null;
+  }>;
 }
 
 export type ImageMetaData = {

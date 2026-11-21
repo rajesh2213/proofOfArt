@@ -5,6 +5,50 @@ import { ImageClaim } from '../src/types/image';
 
 export class ClaimService {
 
+    /**
+     * Require hash continuity when claim evidence includes a hash field.
+     * No silent accept when evidence hash disagrees with stored image hash.
+     */
+    private async assertEvidenceHashContinuity(
+        imageId: string,
+        claimEvidenceMetadata?: any
+    ): Promise<void> {
+        if (!claimEvidenceMetadata || typeof claimEvidenceMetadata !== 'object') {
+            return;
+        }
+
+        const evidenceHash =
+            claimEvidenceMetadata.hash ||
+            claimEvidenceMetadata.imageHash ||
+            claimEvidenceMetadata.image_sha256 ||
+            claimEvidenceMetadata.contentHash;
+
+        if (!evidenceHash || typeof evidenceHash !== 'string') {
+            return;
+        }
+
+        const image = await prisma.image.findUnique({
+            where: { id: imageId },
+            select: { hash: true }
+        });
+
+        if (!image) {
+            throw new ValidationError('Image not found for claim', 'assertEvidenceHashContinuity');
+        }
+
+        if (evidenceHash !== image.hash) {
+            logger.warn('Image claim refused: evidence hash mismatch', {
+                imageId,
+                evidenceHash: evidenceHash.substring(0, 16) + '...',
+                storedHash: image.hash.substring(0, 16) + '...'
+            });
+            throw new ValidationError(
+                'Claim evidence hash does not match stored image hash',
+                'assertEvidenceHashContinuity'
+            );
+        }
+    }
+
     async createImageClaim(
         userId: string, 
         imageId: string, 
@@ -17,6 +61,8 @@ export class ClaimService {
                 logger.warn('Attempt to create duplicate claim', { userId, imageId });
                 throw new ValidationError('Claim already exists for this user and image', 'createImageClaim');
             }
+
+            await this.assertEvidenceHashContinuity(imageId, claimEvidenceMetadata);
 
             const claim = await prisma.imageClaim.create({
                 data: {
@@ -56,6 +102,10 @@ export class ClaimService {
         sessionId?: string
     ): Promise<ImageClaim> {
         try {
+            if (claimEvidenceMetadata !== undefined) {
+                await this.assertEvidenceHashContinuity(imageId, claimEvidenceMetadata);
+            }
+
             const updateData: any = {};
             if (claimEvidenceMetadata !== undefined) {
                 updateData.claimEvidenceMetadata = claimEvidenceMetadata || null;
@@ -77,6 +127,9 @@ export class ClaimService {
             
             return claim as unknown as ImageClaim;
         } catch (error: any) {
+            if (error instanceof ValidationError) {
+                throw error;
+            }
             if (error.code === 'P2025') {
                 logger.warn('Attempt to update non-existent claim', { userId, imageId });
                 throw new ValidationError('Claim not found', 'updateImageClaim');

@@ -14,13 +14,23 @@ export interface SignedProofMetadata extends ProofMetadataPayload {
     signature: string;
     signedBy: 'system' | 'artist';
     signedAt: string;
+    /** Signature algorithm annotation (not part of canonical signed payload). */
+    alg: 'ES256';
+}
+
+function isProduction(): boolean {
+    return process.env.NODE_ENV === 'production';
 }
 
 /**
- * Provides signing and verification of artwork proof metadata
+ * EC P-256 (ES256) signing for platform forensic proof snapshots.
+ *
+ * Artist private-key signing is OUT OF SCOPE for this pass: clients may upload a
+ * public key via POST /api/art/artist/public-key, but downloads still sign with
+ * the system key. Full artist-sign is a follow-up.
  */
 export class CryptographicSigner {
-    private readonly curve = 'prime256v1'; // P-256 curve
+    private readonly curve = 'prime256v1'; // P-256
     private systemPrivateKey: crypto.KeyObject | null = null;
     private systemKeyId: string | null = null;
 
@@ -36,27 +46,34 @@ export class CryptographicSigner {
             try {
                 this.systemPrivateKey = crypto.createPrivateKey(privateKeyPem);
                 this.systemKeyId = keyId;
-                logger.info('System private key loaded from environment');
+                logger.info('System private key loaded from environment', { keyId });
             } catch (error: any) {
                 logger.error('Failed to load system private key from environment', {
                     error: error.message
                 });
-                throw new Error('Invalid system private key configuration');
+                throw new Error('Invalid SYSTEM_PRIVATE_KEY_PEM configuration');
             }
-        } else {
-            logger.warn('SYSTEM_PRIVATE_KEY_PEM not set. Generating new key pair for development.');
-            const { privateKey, publicKey } = crypto.generateKeyPairSync('ec', {
-                namedCurve: this.curve,
-            });
-            this.systemPrivateKey = privateKey;
-            this.systemKeyId = keyId;
-            
-            const publicKeyPem = publicKey.export({ type: 'spki', format: 'pem' });
-            logger.warn('Generated system key pair. Public key:', {
-                publicKeyPem,
-                keyId: this.systemKeyId
-            });
+            return;
         }
+
+        if (isProduction()) {
+            throw new Error(
+                'SYSTEM_PRIVATE_KEY_PEM is required in production. Refusing to start with ephemeral keys.'
+            );
+        }
+
+        logger.warn('SYSTEM_PRIVATE_KEY_PEM not set. Generating ephemeral EC P-256 key for development only.');
+        const { privateKey, publicKey } = crypto.generateKeyPairSync('ec', {
+            namedCurve: this.curve,
+        });
+        this.systemPrivateKey = privateKey;
+        this.systemKeyId = keyId;
+
+        const publicKeyPem = publicKey.export({ type: 'spki', format: 'pem' });
+        logger.warn('Generated ephemeral system key pair (dev only). Public key:', {
+            publicKeyPem,
+            keyId: this.systemKeyId
+        });
     }
 
     /**
@@ -91,7 +108,7 @@ export class CryptographicSigner {
             };
 
             const canonicalPayload = this.createCanonicalPayload(fullPayload);
-            
+
             const signature = crypto.sign('sha256', Buffer.from(canonicalPayload), {
                 key: privateKey,
                 dsaEncoding: 'ieee-p1363',
@@ -102,8 +119,9 @@ export class CryptographicSigner {
             return {
                 ...fullPayload,
                 signature: signatureBase64,
-                signedBy: keyId.startsWith('system-') ? 'system' : 'artist',
+                signedBy: keyId.startsWith('system-') || keyId === 'system-default' ? 'system' : 'artist',
                 signedAt: timestamp,
+                alg: 'ES256',
             };
         } catch (error: any) {
             logger.error('Error signing metadata', {
@@ -136,13 +154,15 @@ export class CryptographicSigner {
     ): Promise<boolean> {
         try {
             const publicKey = crypto.createPublicKey(publicKeyPem);
-            
-            const { signature, signedBy, signedAt, ...payload } = signedMetadata;
+
+            const { signature, signedBy, signedAt, alg, ...payload } = signedMetadata as SignedProofMetadata & {
+                alg?: string;
+            };
             const canonicalPayload = this.createCanonicalPayload(payload as ProofMetadataPayload);
-            
+
             const signatureBuffer = Buffer.from(signature, 'base64');
-            
-            const isValid = crypto.verify(
+
+            return crypto.verify(
                 'sha256',
                 Buffer.from(canonicalPayload),
                 {
@@ -151,8 +171,6 @@ export class CryptographicSigner {
                 },
                 signatureBuffer
             );
-
-            return isValid;
         } catch (error: any) {
             logger.error('Error verifying signature', {
                 error: error.message,
@@ -180,4 +198,3 @@ export class CryptographicSigner {
 }
 
 export const cryptographicSigner = new CryptographicSigner();
-

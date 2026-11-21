@@ -1,7 +1,7 @@
 import {prisma} from '../config/prismaClient';
 import logger from '../utils/logger';
 import { DatabaseError } from '../utils/errors';
-import { ImageClaim, DetectionReport } from '../generated/prisma/client';
+import { ImageClaim } from '../generated/prisma/client';
 import { ImageModel } from '../src/types/image';
 
 export const insertImage = async (hash: string, url: string, filename?: string, metadata?: any): Promise<ImageModel> => {

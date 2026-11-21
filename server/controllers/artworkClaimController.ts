@@ -2,7 +2,6 @@ import { Request, Response, NextFunction } from 'express';
 import { catchAsync } from '../middleware/errorHandler';
 import { artworkClaimService } from '../services/artworkClaimService';
 import { ValidationError } from '../utils/errors';
-import logger from '../utils/logger';
 
 export class ArtworkClaimController {
     /**

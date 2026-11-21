@@ -22,6 +22,7 @@ import { checkDatabaseConnection } from '../config/prismaClient';
 import { checkRedisConnection } from '../config/redis';
 import { cryptographicSigner } from '../services/cryptographicSigner';
 import { keyStoreService } from '../services/keyStoreService';
+import '../services/proofService';
 
 const app = express();
 
@@ -45,6 +46,10 @@ async function startServer() {
         logger.info('System key initialized in KeyStore', { keyId: systemKeyId });
     } catch (error: any) {
         logger.error('Failed to initialize system key', { error: error.message });
+        if (process.env.NODE_ENV === 'production') {
+            logger.error('Server startup aborted: stable system signing key required in production');
+            process.exit(1);
+        }
     }
     app.use(cors({
         origin: process.env.CLIENT_URL || "http://localhost:3000",

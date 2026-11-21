@@ -5,7 +5,7 @@ import logger from '../utils/logger';
 
 export interface UploadOptions {
     folder?: string;
-    resource_type?: string;
+    resource_type?: 'auto' | 'image' | 'video' | 'raw';
     public_id?: string;
 }
 
@@ -28,7 +28,11 @@ export class CloudinaryService {
         options?: UploadOptions
     ): Promise<CloudinaryResource> {
         try {
-            const uploadOptions = {
+            const uploadOptions: {
+                folder: string;
+                resource_type: 'auto' | 'image' | 'video' | 'raw';
+                public_id?: string;
+            } = {
                 folder: options?.folder || this.defaultFolder,
                 resource_type: options?.resource_type || 'auto',
                 ...(publicId && { public_id: publicId }),
@@ -53,7 +57,7 @@ export class CloudinaryService {
                 resourceType: result.resource_type
             });
 
-            return result as CloudinaryResource;
+            return result as unknown as CloudinaryResource;
         } catch (error: any) {
             logger.error('Cloudinary upload failed', {
                 publicId,

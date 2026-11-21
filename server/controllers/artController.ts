@@ -7,9 +7,17 @@ import { imageService } from '../services/imageService';
 import { proofService } from '../services/proofService';
 import { imageMetadataEmbedder } from '../services/imageMetadataEmbedder';
 import { keyStoreService } from '../services/keyStoreService';
-import { cryptographicSigner } from '../services/cryptographicSigner';
+import { SignedProofMetadata } from '../services/cryptographicSigner';
 import axios from 'axios';
 import crypto from 'crypto';
+
+async function fetchImageBuffer(url: string): Promise<Buffer> {
+    const response = await axios.get(url, {
+        responseType: 'arraybuffer',
+        timeout: 30000,
+    });
+    return Buffer.from(response.data);
+}
 
 export class ArtController {
     /**
@@ -25,6 +33,7 @@ export class ArtController {
         const filter = (req.query.filter as string) || 'all';
         const limit = parseInt(req.query.limit as string) || 50;
         const offset = parseInt(req.query.offset as string) || 0;
+        const view = (req.query.view as string) || 'list';
 
         let artworks: any[] = [];
         
@@ -42,6 +51,64 @@ export class ArtController {
             default:
                 artworks = await artService.getUserOwnedArtworks(userId, limit, offset);
                 break;
+        }
+
+        // List view: drop heavy proof payloads (signatures / full embeddedProof) for gallery perf
+        if (view === 'list') {
+            artworks = artworks.map((artwork) => {
+                const proofMetadata = artwork.proofMetadata
+                    ? {
+                          image_sha256: artwork.proofMetadata.image_sha256,
+                          ai_score: artwork.proofMetadata.ai_score,
+                          is_ai_generated: artwork.proofMetadata.is_ai_generated,
+                          tamper_detected: artwork.proofMetadata.tamper_detected,
+                          signer_kid: artwork.proofMetadata.signer_kid,
+                          signedAt: artwork.proofMetadata.signedAt || artwork.proofMetadata.timestamp,
+                          timestamp: artwork.proofMetadata.timestamp || artwork.proofMetadata.signedAt,
+                          signedBy: artwork.proofMetadata.signedBy,
+                      }
+                    : null;
+
+                return {
+                    ...artwork,
+                    embeddedProof: artwork.embeddedProof ? { present: true } : null,
+                    proofMetadata,
+                    originalUploader: artwork.originalUploader
+                        ? {
+                              id: artwork.originalUploader.id,
+                              username: artwork.originalUploader.username,
+                              email: artwork.originalUploader.email,
+                          }
+                        : artwork.originalUploader,
+                    currentOwner: artwork.currentOwner
+                        ? {
+                              id: artwork.currentOwner.id,
+                              username: artwork.currentOwner.username,
+                              email: artwork.currentOwner.email,
+                          }
+                        : artwork.currentOwner,
+                    image: artwork.image
+                        ? {
+                              id: artwork.image.id,
+                              hash: artwork.image.hash,
+                              url: artwork.image.url,
+                              filename: artwork.image.filename,
+                              status: artwork.image.status,
+                              detectionReport: artwork.image.detectionReport
+                                  ? {
+                                        aiProbability: artwork.image.detectionReport.aiProbability,
+                                        detectedLabel: artwork.image.detectionReport.detectedLabel,
+                                    }
+                                  : null,
+                              editDetections: (artwork.image.editDetections || []).map((e: any) => ({
+                                  editType: e.editType,
+                                  confidence: e.confidence,
+                                  maskUrl: e.maskUrl,
+                              })),
+                          }
+                        : artwork.image,
+                };
+            });
         }
 
         res.status(200).json({
@@ -222,12 +289,20 @@ export class ArtController {
     });
 
     /**
-     * GET /api/art/:id/verify-proof
-     * Verify proof for an artwork
+     * GET|POST /api/art/:id/verify-proof
+     * Unified verify: signature, hash, kid, forensics.
+     * Query: ?hash=... optional content hash
+     * Query: ?refetch=true to re-fetch Cloudinary bytes for hash check
+     * Body/multipart: optional file for content hash
+     *
+     * Without hash/file/refetch: verifies signature + kid only — does NOT claim "not edited"
+     * by comparing the DB hash to itself.
      */
     verifyProof = catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         const artworkId = req.params.id;
-        const currentHash = req.query.hash as string | undefined;
+        const queryHash = (req.query.hash as string | undefined) || undefined;
+        const refetch = req.query.refetch === 'true' || req.query.refetch === '1';
+        const file = (req as any).file as Express.Multer.File | undefined;
 
         const artwork = await artService.getArtworkById(artworkId);
 
@@ -240,38 +315,68 @@ export class ArtController {
             return;
         }
 
-        let imageHash = currentHash;
-        if (!imageHash) {
+        let currentHash: string | null = queryHash || null;
+        let hashSource: 'query' | 'file' | 'cloudinary' | 'none' = queryHash ? 'query' : 'none';
+
+        if (file?.buffer) {
+            currentHash = imageMetadataEmbedder.calculateContentHash(file.buffer);
+            hashSource = 'file';
+        } else if (!currentHash && refetch) {
             const image = await imageService.getImageById(artwork.imageId);
-            if (image) {
-                imageHash = image.hash;
+            if (image?.url) {
+                try {
+                    const buffer = await fetchImageBuffer(image.url);
+                    currentHash = imageMetadataEmbedder.calculateContentHash(buffer);
+                    hashSource = 'cloudinary';
+                } catch (error: any) {
+                    logger.error('Failed to re-fetch image for verify', {
+                        error: error.message,
+                        artworkId
+                    });
+                    res.status(502).json({
+                        success: false,
+                        message: 'Failed to re-fetch image bytes for hash check',
+                        data: null
+                    });
+                    return;
+                }
             }
         }
 
-        if (!imageHash) {
-            res.status(400).json({
-                success: false,
-                message: 'Could not determine image hash',
-                data: null
-            });
-            return;
-        }
-
-        const verification = await artService.verifyArtworkProof(artworkId, imageHash);
+        const verification = await artService.verifyArtworkUnified(artworkId, currentHash);
 
         res.status(200).json({
             success: true,
             message: 'Proof verification completed',
             data: {
-                verification,
-                artworkId
+                artworkId,
+                hashSource,
+                verification: {
+                    valid: verification.valid,
+                    signatureValid: verification.signatureValid,
+                    hashMatches: verification.hashMatches,
+                    hashChecked: verification.hashChecked,
+                    kid: verification.kid,
+                    kidStatus: verification.kidStatus,
+                    alg: verification.alg,
+                    currentHash: verification.currentHash,
+                    expectedHash: verification.expectedHash,
+                    forensics: verification.forensics,
+                    scheme: verification.scheme,
+                    reason: verification.reason,
+                }
             }
         });
     });
 
     /**
-     * GET /api/art/:imageId/download?signer=system|artist
-     * Download artwork with embedded signed metadata
+     * GET /api/art/image/:imageId/download?signer=system|artist
+     * Download artwork with embedded signed metadata.
+     *
+     * Hash-then-embed fix: sign SHA-256 of Cloudinary content bytes, then append
+     * trailer (no re-encode). Verify strips trailer and hashes content.
+     *
+     * Artist private-key sign is OUT OF SCOPE — signer=artist still uses system key.
      */
     downloadArtwork = catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         const imageId = req.params.imageId;
@@ -280,6 +385,14 @@ export class ArtController {
 
         if (!userId) {
             throw new ValidationError('User not authenticated', 'downloadArtwork');
+        }
+
+        // Artist-sign path not shipped: always system-sign. Public-key upload is preparatory only.
+        if (signer === 'artist') {
+            logger.info('Artist signer requested but out of scope; using system key', {
+                imageId,
+                userId
+            });
         }
 
         const artwork = await artService.getArtworkByImageId(imageId);
@@ -313,11 +426,7 @@ export class ArtController {
 
         let imageBuffer: Buffer;
         try {
-            const response = await axios.get(image.url, {
-                responseType: 'arraybuffer',
-                timeout: 30000,
-            });
-            imageBuffer = Buffer.from(response.data);
+            imageBuffer = await fetchImageBuffer(image.url);
         } catch (error: any) {
             logger.error('Error downloading image from Cloudinary', {
                 error: error.message,
@@ -331,28 +440,35 @@ export class ArtController {
             return;
         }
 
-        let proofMetadata = artwork.proofMetadata as any;
-        
-        if (!proofMetadata || signer === 'system') {
+        // Content hash of unmodified Cloudinary bytes (pre-trailer)
+        const contentHash = imageMetadataEmbedder.calculateContentHash(imageBuffer);
+
+        let proofMetadata = artwork.proofMetadata as SignedProofMetadata | null;
+        const canReuse =
+            proofMetadata &&
+            proofMetadata.image_sha256 === contentHash &&
+            proofMetadata.signature;
+
+        if (!canReuse) {
             const aiScore = artwork.image.detectionReport?.aiProbability || 0;
             const isAiGenerated = artwork.image.detectionReport?.detectedLabel === 'AI_GENERATED';
             const tamperDetected = (artwork.image.editDetections?.length || 0) > 0;
-            const imageHash = imageMetadataEmbedder.calculateImageHash(imageBuffer);
 
             proofMetadata = await proofService.createSignedProofMetadata(
                 aiScore,
                 isAiGenerated,
                 tamperDetected,
-                imageHash
+                contentHash
             );
 
             await artService.updateArtworkProofMetadata(artwork.id, proofMetadata);
         }
 
         const mimeType = imageMetadataEmbedder.detectMimeType(imageBuffer);
+        // Append trailer after signing content hash — download bytes = content + trailer
         const imageWithMetadata = await imageMetadataEmbedder.embedMetadata(
             imageBuffer,
-            proofMetadata,
+            proofMetadata!,
             mimeType
         );
 
@@ -363,12 +479,15 @@ export class ArtController {
         res.setHeader('Content-Type', mimeType);
         res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
         res.setHeader('Content-Length', imageWithMetadata.length.toString());
+        res.setHeader('X-Proof-Content-Hash', contentHash);
+        res.setHeader('X-Proof-Kid', proofMetadata!.signer_kid);
 
         logger.info('Artwork downloaded with embedded metadata', {
             artworkId: artwork.id,
             imageId,
             userId,
-            signer,
+            signer: 'system',
+            contentHash: contentHash.substring(0, 16) + '...',
             filename: downloadFilename
         });
 
@@ -377,7 +496,7 @@ export class ArtController {
 
     /**
      * POST /api/art/verify-embedded
-     * Verify embedded metadata in uploaded image file
+     * Verify embedded metadata in uploaded image file (same unified semantics).
      */
     verifyEmbeddedMetadata = catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         const file = (req as any).file;
@@ -394,7 +513,7 @@ export class ArtController {
         const mimeType = file.mimetype || imageMetadataEmbedder.detectMimeType(imageBuffer);
 
         const extractedMetadata = await imageMetadataEmbedder.extractMetadata(imageBuffer, mimeType);
-        
+
         if (!extractedMetadata) {
             res.status(400).json({
                 success: false,
@@ -407,45 +526,38 @@ export class ArtController {
             return;
         }
 
-        const keyRecord = await keyStoreService.getActiveKeyByKid(extractedMetadata.signer_kid);
-        if (!keyRecord) {
-            res.status(400).json({
-                success: false,
-                message: 'Signer key not found or revoked',
-                data: {
-                    valid: false,
-                    reason: 'Signer key not found',
-                    metadata: extractedMetadata
-                }
-            });
-            return;
-        }
+        const currentHash = imageMetadataEmbedder.calculateContentHash(imageBuffer);
 
-        const isValid = await cryptographicSigner.verifySignature(
-            extractedMetadata,
-            keyRecord.publicKeyPem
-        );
-
-        const currentHash = imageMetadataEmbedder.calculateImageHash(imageBuffer);
-        const hashMatches = currentHash === extractedMetadata.image_sha256;
+        const verification = await proofService.verifyArtworkUnified({
+            proofMetadata: extractedMetadata,
+            currentHash,
+        });
 
         res.status(200).json({
             success: true,
             message: 'Verification completed',
             data: {
-                valid: isValid && hashMatches,
-                reason: !isValid ? 'Invalid signature' : !hashMatches ? 'Image hash mismatch (image may have been modified)' : undefined,
+                valid: verification.valid,
+                signatureValid: verification.signatureValid,
+                hashMatches: verification.hashMatches,
+                hashChecked: verification.hashChecked,
+                kid: verification.kid,
+                kidStatus: verification.kidStatus,
+                alg: verification.alg,
+                currentHash: verification.currentHash,
+                expectedHash: verification.expectedHash,
+                forensics: verification.forensics,
+                scheme: verification.scheme,
+                reason: verification.reason,
                 metadata: extractedMetadata,
-                currentHash,
-                hashMatches,
-                signatureValid: isValid
             }
         });
     });
 
     /**
-     * POST /api/artist/public-key
-     * Upload artist public key for signing artworks
+     * POST /api/art/artist/public-key
+     * Upload artist public key (preparatory only).
+     * Full artist private-key signing of downloads is OUT OF SCOPE — follow-up work.
      */
     uploadArtistPublicKey = catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         const userId = (req as any).user?.id;
@@ -482,7 +594,7 @@ export class ArtController {
             userId
         );
 
-        logger.info('Artist public key uploaded', {
+        logger.info('Artist public key uploaded (signing path not yet active)', {
             userId,
             keyId,
             keyRecordId: keyRecord.id
@@ -490,15 +602,15 @@ export class ArtController {
 
         res.status(200).json({
             success: true,
-            message: 'Public key uploaded successfully',
+            message: 'Public key uploaded successfully. Artist-signed downloads are not enabled yet; proofs remain system-signed.',
             data: {
                 keyId: keyRecord.kid,
                 ownerType: keyRecord.ownerType,
-                createdAt: keyRecord.createdAt
+                createdAt: keyRecord.createdAt,
+                artistSignEnabled: false
             }
         });
     });
 }
 
 export const artController = new ArtController();
-

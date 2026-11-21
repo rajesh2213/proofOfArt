@@ -1,7 +1,8 @@
 import { prisma } from '../config/prismaClient';
 import { DatabaseError, ValidationError } from '../utils/errors';
 import logger from '../utils/logger';
-import { proofService, EmbeddedProof } from './proofService';
+import { proofService, EmbeddedProof, UnifiedArtworkVerification } from './proofService';
+import { SignedProofMetadata } from './cryptographicSigner';
 
 export interface ArtworkWithRelations {
     id: string;
@@ -9,7 +10,7 @@ export interface ArtworkWithRelations {
     originalUploaderId: string;
     currentOwnerId: string;
     embeddedProof: EmbeddedProof | null;
-    proofMetadata?: any;
+    proofMetadata?: SignedProofMetadata | null;
     createdAt: Date;
     updatedAt: Date;
     image: {
@@ -49,12 +50,14 @@ export interface ArtworkWithRelations {
 
 export class ArtService {
     /**
-     * Create artwork from uploaded image
+     * Create artwork from uploaded image.
+     * Primary proof: EC proofMetadata. embeddedProof is deprecated (read-only for legacy rows).
      */
     async createArtwork(
         imageId: string,
         uploaderId: string,
-        proof: EmbeddedProof
+        proof: EmbeddedProof | null,
+        proofMetadata?: SignedProofMetadata
     ): Promise<ArtworkWithRelations> {
         try {
             const artwork = await prisma.artwork.create({
@@ -62,7 +65,8 @@ export class ArtService {
                     imageId,
                     originalUploaderId: uploaderId,
                     currentOwnerId: uploaderId,
-                    embeddedProof: proof as any,
+                    ...(proof ? { embeddedProof: proof as any } : {}),
+                    ...(proofMetadata ? { proofMetadata: proofMetadata as any } : {}),
                 },
                 include: {
                     image: {
@@ -426,6 +430,15 @@ export class ArtService {
                 throw new ValidationError('Artwork not found', 'transferOwnership');
             }
 
+            const continuity = await this.assertHashContinuity(artworkId);
+            if (!continuity.ok) {
+                throw new ValidationError(
+                    continuity.reason ||
+                        'Ownership transfer refused: proof hash does not match stored image hash',
+                    'transferOwnership'
+                );
+            }
+
             const previousOwnerId = artwork.currentOwnerId;
 
             const updatedArtwork = await prisma.artwork.update({
@@ -501,20 +514,39 @@ export class ArtService {
     }
 
     /**
-     * Verify proof for an artwork
+     * @deprecated Prefer verifyArtworkUnified. Kept for callers expecting HMAC-shaped result.
      */
-    async verifyArtworkProof(artworkId: string, currentImageHash: string): Promise<{
+    async verifyArtworkProof(artworkId: string, currentImageHash?: string | null): Promise<{
         isValid: boolean;
         wasEdited: boolean;
         originalMetadata: EmbeddedProof | null;
         currentHash: string;
         error?: string;
     }> {
+        const unified = await this.verifyArtworkUnified(artworkId, currentImageHash ?? null);
+        return {
+            isValid: unified.valid,
+            wasEdited: unified.hashChecked ? unified.hashMatches === false : false,
+            originalMetadata: unified.legacyProof != null ? unified.legacyProof : null,
+            currentHash: unified.currentHash || '',
+            error: unified.reason
+        };
+    }
+
+    /**
+     * Unified artwork verification (EC primary, HMAC bridge).
+     * Pass currentImageHash from file or Cloudinary — never pass DB hash alone for tamper claims.
+     */
+    async verifyArtworkUnified(
+        artworkId: string,
+        currentImageHash?: string | null
+    ): Promise<UnifiedArtworkVerification> {
         try {
             const artwork = await prisma.artwork.findUnique({
                 where: { id: artworkId },
                 select: {
                     embeddedProof: true,
+                    proofMetadata: true,
                     image: {
                         select: {
                             hash: true
@@ -525,42 +557,127 @@ export class ArtService {
 
             if (!artwork) {
                 return {
-                    isValid: false,
-                    wasEdited: false,
-                    originalMetadata: null,
-                    currentHash: currentImageHash,
-                    error: 'Artwork not found'
+                    valid: false,
+                    signatureValid: null,
+                    hashMatches: null,
+                    hashChecked: false,
+                    kid: null,
+                    kidStatus: 'none',
+                    alg: null,
+                    currentHash: currentImageHash ?? null,
+                    expectedHash: null,
+                    forensics: {
+                        ai_score: null,
+                        is_ai_generated: null,
+                        tamper_detected: null,
+                        timestamp: null,
+                        signer: null,
+                    },
+                    scheme: 'none',
+                    reason: 'Artwork not found',
                 };
             }
 
-            const storedProof = artwork.embeddedProof as EmbeddedProof | null;
-            const storedHash = artwork.image.hash;
-
-            const verification = proofService.verifyProofFromDatabase(
-                storedProof,
-                currentImageHash || storedHash
-            );
-
-            return verification;
+            return proofService.verifyArtworkUnified({
+                proofMetadata: artwork.proofMetadata as SignedProofMetadata | null,
+                legacyProof: artwork.embeddedProof as EmbeddedProof | null,
+                currentHash: currentImageHash ?? null,
+                storedImageHash: artwork.image.hash,
+            });
         } catch (error: any) {
             logger.error('Error verifying artwork proof', {
                 error: error.message,
                 artworkId
             });
             return {
-                isValid: false,
-                wasEdited: false,
-                originalMetadata: null,
-                currentHash: currentImageHash,
-                error: error.message
+                valid: false,
+                signatureValid: null,
+                hashMatches: null,
+                hashChecked: false,
+                kid: null,
+                kidStatus: 'none',
+                alg: null,
+                currentHash: currentImageHash ?? null,
+                expectedHash: null,
+                forensics: {
+                    ai_score: null,
+                    is_ai_generated: null,
+                    tamper_detected: null,
+                    timestamp: null,
+                    signer: null,
+                },
+                scheme: 'none',
+                reason: error.message,
             };
         }
     }
 
     /**
+     * Hash continuity for claim/transfer: proof hash must match stored image hash.
+     */
+    async assertHashContinuity(artworkId: string): Promise<{
+        ok: boolean;
+        storedHash: string;
+        proofHash: string | null;
+        forensics: {
+            ai_score: number | null;
+            is_ai_generated: boolean | null;
+            tamper_detected: boolean | null;
+        };
+        reason?: string;
+    }> {
+        const artwork = await prisma.artwork.findUnique({
+            where: { id: artworkId },
+            select: {
+                embeddedProof: true,
+                proofMetadata: true,
+                image: { select: { hash: true } }
+            }
+        });
+
+        if (!artwork) {
+            throw new ValidationError('Artwork not found', 'assertHashContinuity');
+        }
+
+        const proofMetadata = artwork.proofMetadata as SignedProofMetadata | null;
+        const legacyProof = artwork.embeddedProof as EmbeddedProof | null;
+        const storedHash = artwork.image.hash;
+        const proofHash = proofService.getExpectedContentHash(
+            proofMetadata,
+            legacyProof,
+            null
+        );
+
+        const forensics = {
+            ai_score: proofMetadata?.ai_score ?? legacyProof?.ai_score ?? null,
+            is_ai_generated:
+                proofMetadata?.is_ai_generated ?? legacyProof?.is_ai_generated ?? null,
+            tamper_detected:
+                proofMetadata?.tamper_detected ?? legacyProof?.tamper_detected ?? null,
+        };
+
+        if (proofHash && proofHash !== storedHash) {
+            return {
+                ok: false,
+                storedHash,
+                proofHash,
+                forensics,
+                reason: 'Proof content hash does not match stored image hash',
+            };
+        }
+
+        return {
+            ok: true,
+            storedHash,
+            proofHash,
+            forensics,
+        };
+    }
+
+    /**
      * Update artwork proof metadata
      */
-    async updateArtworkProofMetadata(artworkId: string, proofMetadata: any): Promise<void> {
+    async updateArtworkProofMetadata(artworkId: string, proofMetadata: SignedProofMetadata): Promise<void> {
         try {
             await prisma.artwork.update({
                 where: { id: artworkId },

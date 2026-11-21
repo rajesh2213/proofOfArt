@@ -97,16 +97,6 @@ export class InferenceWorker {
             const inferenceUrl = `${inferBaseUrl}/api/v1/analyze`;
             await job.updateProgress(20);
 
-            try {
-                const healthCheckUrl = `${inferBaseUrl}/`;
-                const healthResponse = await fetch(healthCheckUrl, {
-                    method: 'GET',
-                    headers: { 'Accept': 'application/json' },
-                    signal: AbortSignal.timeout(5000)
-                });
-            } catch (healthError: any) {
-            }
-
             await job.updateProgress(30);
 
             const requestBody = { image_url: imageUrl };

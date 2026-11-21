@@ -54,6 +54,21 @@ export class ArtworkClaimService {
                 throw new ValidationError('You already own this artwork', 'createClaim');
             }
 
+            const continuity = await artService.assertHashContinuity(artworkId);
+            if (!continuity.ok) {
+                throw new ValidationError(
+                    continuity.reason || 'Hash continuity check failed; claim refused',
+                    'createClaim'
+                );
+            }
+            if (continuity.forensics.tamper_detected) {
+                logger.warn('Claim created on artwork with tamper flag', {
+                    artworkId,
+                    requesterId,
+                    forensics: continuity.forensics
+                });
+            }
+
             const existingClaim = await prisma.artworkClaim.findFirst({
                 where: {
                     artworkId,
@@ -252,6 +267,22 @@ export class ArtworkClaimService {
                 throw new ValidationError(`Claim is already ${claim.status}`, 'approveClaim');
             }
 
+            const continuity = await artService.assertHashContinuity(claim.artworkId);
+            if (!continuity.ok) {
+                throw new ValidationError(
+                    continuity.reason ||
+                        'Cannot approve claim: proof hash does not match stored image hash',
+                    'approveClaim'
+                );
+            }
+            if (continuity.forensics.is_ai_generated || continuity.forensics.tamper_detected) {
+                logger.warn('Approving claim with elevated forensic flags', {
+                    claimId,
+                    artworkId: claim.artworkId,
+                    forensics: continuity.forensics
+                });
+            }
+
             await artService.transferOwnership(
                 claim.artworkId,
                 claim.requesterId,
@@ -288,7 +319,11 @@ export class ArtworkClaimService {
             logger.info('Artwork claim approved', {
                 claimId,
                 artworkId: claim.artworkId,
-                newOwnerId: claim.requesterId
+                newOwnerId: claim.requesterId,
+                forensics: continuity.forensics,
+                proofHash: continuity.proofHash
+                    ? continuity.proofHash.substring(0, 16) + '...'
+                    : null
             });
 
             await notificationService.createNotification(
@@ -309,7 +344,16 @@ export class ArtworkClaimService {
                 claimId
             );
 
-            return updatedClaim as unknown as ArtworkClaimWithRelations;
+            return {
+                ...(updatedClaim as unknown as ArtworkClaimWithRelations),
+                // Surfaced for reviewers — not a silent approve when flags are present
+                proofContinuity: {
+                    ok: continuity.ok,
+                    storedHash: continuity.storedHash,
+                    proofHash: continuity.proofHash,
+                    forensics: continuity.forensics,
+                },
+            } as ArtworkClaimWithRelations;
         } catch (error: any) {
             if (error instanceof ValidationError) {
                 throw error;

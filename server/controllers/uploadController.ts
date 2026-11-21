@@ -287,15 +287,15 @@ export const handleUpload = catchAsync(async (req: Request, res: Response, next:
                         tamperDetected = ((imageWithEdits as any)?.editDetections?.length || 0) > 0;
                     }
 
-                    const proof = proofService.createProofFromInference(
+                    // EC P-256 proofMetadata only. HMAC embeddedProof is deprecated (legacy rows remain readable).
+                    const proofMetadata = await proofService.createSignedProofMetadata(
                         aiScore,
                         isAiGenerated,
                         tamperDetected,
-                        imgHash,
-                        isMadeByUser ? 'artist' : 'system'
+                        imgHash
                     );
 
-                    await artService.createArtwork(image.id, userId, proof);
+                    await artService.createArtwork(image.id, userId, null, proofMetadata);
                     artworkCreated = true;
 
                     logger.info('Artwork created for user upload', {
