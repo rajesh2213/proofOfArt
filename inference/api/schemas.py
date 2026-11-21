@@ -10,6 +10,7 @@ class AIPrediction(BaseModel):
     is_ai_generated: bool
     is_uncertain: bool = False
     confidence: float = Field(..., ge=0.0, le=1.0)
+    model_id: Optional[str] = None
 
 
 class Tampering(BaseModel):
@@ -29,6 +30,7 @@ class Tampering(BaseModel):
         ge=0,
         description="Absolute count of edited pixels"
     )
+    model_id: Optional[str] = None
 
 
 class AnalyzeResponse(BaseModel):
@@ -41,13 +43,15 @@ class AnalyzeResponse(BaseModel):
                 "predictions": {
                     "is_ai_generated": False,
                     "is_uncertain": False,
-                    "confidence": 0.15
+                    "confidence": 0.15,
+                    "model_id": "baseline_b0"
                 },
                 "tampering": {
                     "detected": False,
                     "mask_base64": None,
                     "edited_area_ratio": 0.0,
-                    "edited_pixels": 0
+                    "edited_pixels": 0,
+                    "model_id": "dinolizer_v1"
                 }
             }
         }

@@ -1,0 +1,11 @@
+# Use the GPU generation venv (.venv-gen).
+# torch/torchvision already installed there with CUDA.
+transformers>=4.40
+peft>=0.11
+tqdm
+pandas
+pillow
+numpy
+scipy
+scikit-learn
+pytest>=8

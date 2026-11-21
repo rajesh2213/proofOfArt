@@ -1,0 +1,1 @@
+"""P3 AI-edit localizer (DinoLizer-style DINOv2 patch head)."""
