@@ -7,6 +7,7 @@ import { sendVerificationEmail } from '../utils/emailService';
 import { getUserByEmail, createUser, updateUser, getUserByVerificationToken, getUserById } from '../models/authModel';
 import { prisma } from '../config/prismaClient';
 import jwt from 'jsonwebtoken';
+import { tokenBlacklistService } from '../services/tokenBlacklistService';
 
 export const registerUser = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -117,6 +118,17 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
 
 export const logoutUser = async (req: Request, res: Response): Promise<void> => {
     try {
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            const accessToken = authHeader.substring(7);
+            await tokenBlacklistService.addToBlacklist(accessToken);
+        }
+
+        const refreshToken = req.cookies.refreshToken;
+        if (refreshToken) {
+            await tokenBlacklistService.addRefreshTokenToBlacklist(refreshToken);
+        }
+
         res.clearCookie('refreshToken', {
             httpOnly: true,
             secure: true,
@@ -136,7 +148,19 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
         if(!refreshToken) {
             throw new ValidationError('Refresh token is required', 'refreshToken');
         }
+
+        const isBlacklisted = await tokenBlacklistService.isRefreshTokenBlacklisted(refreshToken);
+        if (isBlacklisted) {
+            throw new ValidationError('Refresh token has been revoked', 'refreshToken');
+        }
+
         const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET as string) as { id: string };
+
+        const isUserBlacklisted = await tokenBlacklistService.isUserBlacklisted(decoded.id);
+        if (isUserBlacklisted) {
+            throw new ValidationError('User tokens have been revoked', 'refreshToken');
+        }
+
         const user = await getUserById(decoded.id);
         if(!user) {
             throw new ValidationError('User not found', 'refreshToken');

@@ -3,18 +3,49 @@ import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { prisma } from '../config/prismaClient';
 import logger from '../utils/logger';
 import { ExtractJwt, Strategy as JwtStrategy, VerifiedCallback } from 'passport-jwt';
+import { tokenBlacklistService } from '../services/tokenBlacklistService';
 
 interface JwtPayload {
     id: string;
 }
 
+const tokenStore = new WeakMap<any, string>();
+
+const customExtractor = (req: any): string | null => {
+    const authHeader = req.headers?.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.substring(7);
+        tokenStore.set(req, token);
+        return token;
+    }
+    return null;
+};
+
 const options = {
-    jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+    jwtFromRequest: ExtractJwt.fromExtractors([
+        customExtractor,
+        ExtractJwt.fromAuthHeaderAsBearerToken()
+    ]),
     secretOrKey: process.env.JWT_SECRET as string,
+    passReqToCallback: true as const,
 }
 
-passport.use(new JwtStrategy(options, async (jwtPayload: JwtPayload, done: VerifiedCallback) => {
+passport.use(new JwtStrategy(options, async (req: any, jwtPayload: JwtPayload, done: VerifiedCallback) => {
     try {
+        const token = tokenStore.get(req) || customExtractor(req);
+
+        if (token) {
+            const isBlacklisted = await tokenBlacklistService.isTokenBlacklisted(token);
+            if (isBlacklisted) {
+                return done(null, false, { message: 'Token has been revoked' });
+            }
+        }
+
+        const isUserBlacklisted = await tokenBlacklistService.isUserBlacklisted(jwtPayload.id);
+        if (isUserBlacklisted) {
+            return done(null, false, { message: 'User tokens have been revoked' });
+        }
+
         const user = await prisma.user.findUnique({
             where: {id: jwtPayload.id}
         })
