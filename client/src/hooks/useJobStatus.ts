@@ -34,6 +34,7 @@ export interface JobStatusResponse {
 interface UseJobStatusOptions {
     imageId: string | null;
     enabled?: boolean;
+    /** First wait after the initial poll (ms). Backoff grows from here. */
     initialInterval?: number;
     maxInterval?: number;
     backoffMultiplier?: number;
@@ -41,6 +42,8 @@ interface UseJobStatusOptions {
     onComplete?: (data: JobStatusResponse['data']) => void;
     onError?: (error: Error) => void;
 }
+
+const TERMINAL: ReadonlySet<JobStatus> = new Set(['complete', 'failed']);
 
 export function useJobStatus({
     imageId,
@@ -58,135 +61,163 @@ export function useJobStatus({
     const [error, setError] = useState<Error | null>(null);
     const [isPolling, setIsPolling] = useState(false);
 
-    const intervalRef = useRef<number | null>(null);
-    const currentIntervalRef = useRef<number>(initialInterval);
-    const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const statusRef = useRef<JobStatus>('pending');
+    const onStatusChangeRef = useRef(onStatusChange);
+    const onCompleteRef = useRef(onComplete);
+    const onErrorRef = useRef(onError);
 
-    const poll = useCallback(async () => {
-        if (!imageId || !enabled) {
-            return;
-        }
-
-        try {
-            const response = await fetch(
-                `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/api/progress/image/${imageId}`,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('accessToken') || ''}`,
-                    },
-                    credentials: 'include',
-                }
-            );
-
-            if (!response.ok) {
-                throw new Error(`Failed to fetch job status: ${response.statusText}`);
-            }
-
-            const result: JobStatusResponse = await response.json();
-
-            if (result.success && result.data) {
-                const newStatus = result.data.status;
-                const newProgress = result.data.progress || 0;
-
-                setStatus(newStatus);
-                setProgress(newProgress);
-                setData(result.data);
-                setError(null);
-
-                if (onStatusChange && newStatus !== status) {
-                    onStatusChange(newStatus);
-                }
-
-                if (newStatus === 'complete' || newStatus === 'failed') {
-                    setIsPolling(false);
-                    if (intervalRef.current) {
-                        clearInterval(intervalRef.current);
-                        intervalRef.current = null;
-                    }
-                    if (timeoutRef.current) {
-                        clearTimeout(timeoutRef.current);
-                        timeoutRef.current = null;
-                    }
-
-                    if (newStatus === 'complete' && onComplete) {
-                        onComplete(result.data);
-                    }
-                } else {
-                    setIsPolling(true);
-                    currentIntervalRef.current = Math.min(
-                        currentIntervalRef.current * backoffMultiplier,
-                        maxInterval
-                    );
-                }
-            }
-        } catch (err) {
-            const error = err instanceof Error ? err : new Error('Unknown error');
-            setError(error);
-            if (onError) {
-                onError(error);
-            }
-            currentIntervalRef.current = Math.min(
-                currentIntervalRef.current * backoffMultiplier,
-                maxInterval
-            );
-        }
-    }, [imageId, enabled, onStatusChange, onComplete, onError, backoffMultiplier, maxInterval, status]);
+    useEffect(() => {
+        onStatusChangeRef.current = onStatusChange;
+        onCompleteRef.current = onComplete;
+        onErrorRef.current = onError;
+    }, [onStatusChange, onComplete, onError]);
 
     useEffect(() => {
         if (!imageId || !enabled) {
             setIsPolling(false);
-            if (intervalRef.current) {
-                clearInterval(intervalRef.current);
-                intervalRef.current = null;
-            }
-            if (timeoutRef.current) {
-                clearTimeout(timeoutRef.current);
-                timeoutRef.current = null;
-            }
             return;
         }
 
-        currentIntervalRef.current = initialInterval;
+        let cancelled = false;
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+        let interval = initialInterval;
+
+        statusRef.current = 'pending';
+        setStatus('pending');
+        setProgress(0);
+        setError(null);
         setIsPolling(true);
 
-        poll();
-
-        const scheduleNextPoll = () => {
-            if (timeoutRef.current) {
-                clearTimeout(timeoutRef.current);
+        const clearTimer = () => {
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
             }
-            timeoutRef.current = setTimeout(() => {
-                if (imageId && enabled && (status === 'pending' || status === 'processing')) {
-                    poll();
-                    scheduleNextPoll();
-                } else {
-                    setIsPolling(false);
-                }
-            }, currentIntervalRef.current);
         };
 
-        scheduleNextPoll();
+        const scheduleNext = () => {
+            clearTimer();
+            if (cancelled || TERMINAL.has(statusRef.current)) {
+                setIsPolling(false);
+                return;
+            }
+            timeoutId = setTimeout(() => {
+                void poll();
+            }, interval);
+            interval = Math.min(interval * backoffMultiplier, maxInterval);
+        };
+
+        const poll = async () => {
+            if (cancelled || !imageId) return;
+
+            try {
+                const response = await fetch(
+                    `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/api/progress/image/${imageId}`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${localStorage.getItem('accessToken') || ''}`,
+                        },
+                        credentials: 'include',
+                    }
+                );
+
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch job status: ${response.statusText}`);
+                }
+
+                const result: JobStatusResponse = await response.json();
+
+                if (cancelled) return;
+
+                if (result.success && result.data) {
+                    const newStatus = result.data.status;
+                    const newProgress = result.data.progress || 0;
+                    const prevStatus = statusRef.current;
+
+                    statusRef.current = newStatus;
+                    setStatus(newStatus);
+                    setProgress(newProgress);
+                    setData(result.data);
+                    setError(null);
+
+                    if (onStatusChangeRef.current && newStatus !== prevStatus) {
+                        onStatusChangeRef.current(newStatus);
+                    }
+
+                    if (TERMINAL.has(newStatus)) {
+                        setIsPolling(false);
+                        clearTimer();
+                        if (newStatus === 'complete' && onCompleteRef.current) {
+                            onCompleteRef.current(result.data);
+                        }
+                        return;
+                    }
+
+                    setIsPolling(true);
+                    scheduleNext();
+                    return;
+                }
+            } catch (err) {
+                if (cancelled) return;
+                const nextError = err instanceof Error ? err : new Error('Unknown error');
+                setError(nextError);
+                onErrorRef.current?.(nextError);
+                scheduleNext();
+                return;
+            }
+
+            scheduleNext();
+        };
+
+        // Immediate first poll, then backoff from initialInterval
+        void poll();
 
         return () => {
-            if (intervalRef.current) {
-                clearInterval(intervalRef.current);
-                intervalRef.current = null;
-            }
-            if (timeoutRef.current) {
-                clearTimeout(timeoutRef.current);
-                timeoutRef.current = null;
-            }
+            cancelled = true;
+            clearTimer();
+            setIsPolling(false);
         };
-    }, [imageId, enabled, poll, initialInterval, status]);
+    }, [imageId, enabled, initialInterval, maxInterval, backoffMultiplier]);
 
     const retry = useCallback(() => {
-        if (imageId) {
-            currentIntervalRef.current = initialInterval;
-            setError(null);
-            setIsPolling(true);
-            poll();
-        }
-    }, [imageId, initialInterval, poll]);
+        if (!imageId) return;
+        statusRef.current = 'pending';
+        setStatus('pending');
+        setError(null);
+        setIsPolling(true);
+        // Re-trigger effect by toggling is a no-op; callers remount/enable. Force one poll:
+        void (async () => {
+            try {
+                const response = await fetch(
+                    `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/api/progress/image/${imageId}`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${localStorage.getItem('accessToken') || ''}`,
+                        },
+                        credentials: 'include',
+                    }
+                );
+                if (!response.ok) throw new Error(`Failed to fetch job status: ${response.statusText}`);
+                const result: JobStatusResponse = await response.json();
+                if (result.success && result.data) {
+                    statusRef.current = result.data.status;
+                    setStatus(result.data.status);
+                    setProgress(result.data.progress || 0);
+                    setData(result.data);
+                    if (TERMINAL.has(result.data.status)) {
+                        setIsPolling(false);
+                        if (result.data.status === 'complete') {
+                            onCompleteRef.current?.(result.data);
+                        }
+                    }
+                }
+            } catch (err) {
+                const nextError = err instanceof Error ? err : new Error('Unknown error');
+                setError(nextError);
+                onErrorRef.current?.(nextError);
+            }
+        })();
+    }, [imageId]);
 
     return {
         status,
@@ -197,4 +228,3 @@ export function useJobStatus({
         retry,
     };
 }
-

@@ -1,45 +1,59 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Image from 'next/image';
 import { getArtworkByImageId, verifyArtworkProof, Artwork, ProofVerification } from '../../../../lib/api/art';
-import { useAuth } from '../../../../contexts/AuthContext';
 
 export default function ImageDetailPage() {
     const params = useParams();
     const imageId = params?.imageId as string;
-    const { user } = useAuth();
     
     const [artwork, setArtwork] = useState<Artwork | null>(null);
     const [proofVerification, setProofVerification] = useState<ProofVerification | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showMask, setShowMask] = useState(false);
+    const [showProofUI, setShowProofUI] = useState(false);
+    const [proofLoading, setProofLoading] = useState(false);
+    const [proofError, setProofError] = useState<string | null>(null);
 
-    useEffect(() => {
-        if (imageId) {
-            loadArtwork();
-        }
-    }, [imageId]);
-
-    const loadArtwork = async () => {
+    const loadArtwork = useCallback(async () => {
         try {
             setLoading(true);
-                    const response = await getArtworkByImageId(imageId);
-                    if (response.success) {
-                        setArtwork(response.data.artwork);
-                        if (response.data.artwork.id && !response.data.artwork.id.startsWith('virtual-')) {
-                    const verifyResponse = await verifyArtworkProof(response.data.artwork.id);
-                    if (verifyResponse.success) {
-                        setProofVerification(verifyResponse.data.verification);
-                    }
-                }
+            const response = await getArtworkByImageId(imageId);
+            if (response.success) {
+                setArtwork(response.data.artwork);
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to load artwork');
         } finally {
             setLoading(false);
+        }
+    }, [imageId]);
+
+    useEffect(() => {
+        if (imageId) {
+            loadArtwork();
+        }
+    }, [imageId, loadArtwork]);
+
+    const openProofUI = async () => {
+        if (!artwork || artwork.id.startsWith('virtual-')) return;
+        setShowProofUI(true);
+        if (proofVerification || proofLoading) return;
+
+        try {
+            setProofLoading(true);
+            setProofError(null);
+            const verifyResponse = await verifyArtworkProof(artwork.id);
+            if (verifyResponse.success) {
+                setProofVerification(verifyResponse.data.verification);
+            }
+        } catch (err) {
+            setProofError(err instanceof Error ? err.message : 'Failed to verify proof');
+        } finally {
+            setProofLoading(false);
         }
     };
 
@@ -63,6 +77,7 @@ export default function ImageDetailPage() {
     const hasTamper = (artwork.image.editDetections?.length || 0) > 0;
     const maskUrl = artwork.image.editDetections?.[0]?.maskUrl;
     const isVirtual = artwork.id.startsWith('virtual-');
+    const hasStoredProof = !isVirtual && (!!artwork.proofMetadata || !!artwork.embeddedProof);
 
     return (
         <div className="container mx-auto px-4 py-8">
@@ -110,10 +125,10 @@ export default function ImageDetailPage() {
                         </div>
                     )}
 
-                    <div className="flex gap-2 mb-4">
+                    <div className="flex gap-2 mb-4 flex-wrap">
                         {!isVirtual && proofVerification?.isValid && (
                             <span className="bg-green-500 text-white px-3 py-1 rounded-full text-sm">
-                                ✓ Verified Authentic
+                                Platform-signed snapshot OK
                             </span>
                         )}
                         {!isAiGenerated && (
@@ -166,21 +181,43 @@ export default function ImageDetailPage() {
                         </div>
                     )}
 
-                    {!isVirtual && proofVerification && (
-                        <div className="bg-gray-50 p-4 rounded-lg mt-4">
-                            <h3 className="font-semibold mb-2">Proof Verification</h3>
-                            <div className="text-sm space-y-1">
-                                <p>
-                                    Valid: <span className={proofVerification.isValid ? 'text-green-600' : 'text-red-600'}>
-                                        {proofVerification.isValid ? 'Yes' : 'No'}
-                                    </span>
-                                </p>
-                                <p>
-                                    Was Edited: <span className={proofVerification.wasEdited ? 'text-red-600' : 'text-green-600'}>
-                                        {proofVerification.wasEdited ? 'Yes' : 'No'}
-                                    </span>
-                                </p>
-                            </div>
+                    {hasStoredProof && (
+                        <div className="mt-4">
+                            {!showProofUI ? (
+                                <button
+                                    type="button"
+                                    onClick={openProofUI}
+                                    className="px-4 py-2 bg-gray-800 text-white rounded-lg text-sm hover:bg-gray-700"
+                                >
+                                    View platform-signed forensic snapshot
+                                </button>
+                            ) : (
+                                <div className="bg-gray-50 p-4 rounded-lg">
+                                    <h3 className="font-semibold mb-2">Platform-signed forensic snapshot</h3>
+                                    {proofLoading && (
+                                        <p className="text-sm text-gray-500">Verifying snapshot…</p>
+                                    )}
+                                    {proofError && (
+                                        <p className="text-sm text-red-600">{proofError}</p>
+                                    )}
+                                    {proofVerification && (
+                                        <div className="text-sm space-y-1">
+                                            <p>
+                                                Signature check:{' '}
+                                                <span className={proofVerification.isValid ? 'text-green-600' : 'text-red-600'}>
+                                                    {proofVerification.isValid ? 'OK' : 'Failed'}
+                                                </span>
+                                            </p>
+                                            <p>
+                                                Hash mismatch:{' '}
+                                                <span className={proofVerification.wasEdited ? 'text-red-600' : 'text-green-600'}>
+                                                    {proofVerification.wasEdited ? 'Yes' : 'No'}
+                                                </span>
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -188,4 +225,3 @@ export default function ImageDetailPage() {
         </div>
     );
 }
-

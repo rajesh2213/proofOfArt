@@ -6,91 +6,106 @@ import { useLoaderContext } from "../../contexts/LoaderContext";
 import HomePageClient from "./HomePageClient";
 import { useUI } from "../../contexts/UIContext";
 
+/** Lightweight easel preview — avoids mounting a second HomePageClient during the loader. */
+function LoaderEaselPreview() {
+  return (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        background: "linear-gradient(160deg, #fce3e7 0%, #f5d0d8 100%)",
+      }}
+    />
+  );
+}
+
 export default function HomePageShell() {
   const pathname = usePathname();
   const { startLoader, isLoading } = useLoaderContext();
   const [showSite, setShowSite] = useState(false);
-  const preloadVideoRef = useRef<HTMLImageElement | null>(null);
-  const preloadImageRef = useRef<HTMLImageElement | null>(null);
   const loaderStartedRef = useRef(false);
   const previousPathnameRef = useRef<string | null>(null);
-  const { setPaintDripState, setIsScrollSceneActive, paintDripState, isScrollSceneActive } = useUI();
+  const { setPaintDripState, setIsScrollSceneActive } = useUI();
 
-
+  // Defer heavy sprite/image preload until idle (after first paint / loader start)
   useEffect(() => {
+    if (pathname && pathname !== "/") return;
+
+    let cancelled = false;
     const spriteSheetPaths = [
       "/spritesheets/paint_drip_spritesheets/sheet_1.webp",
       "/spritesheets/paint_drip_spritesheets/sheet_2.webp",
       "/spritesheets/paint_drip_spritesheets/sheet_3.webp",
     ];
 
-    const loadedSheets: HTMLImageElement[] = [];
+    const preload = () => {
+      if (cancelled || typeof window === "undefined") return;
 
-    spriteSheetPaths.forEach((path, index) => {
-      const spriteSheet = new window.Image();
-      spriteSheet.crossOrigin = "anonymous";
-      spriteSheet.loading = "eager";
+      spriteSheetPaths.forEach((path) => {
+        const spriteSheet = new window.Image();
+        spriteSheet.decoding = "async";
+        spriteSheet.src = path;
+      });
 
-      spriteSheet.onload = () => {
-        loadedSheets[index] = spriteSheet;
-        if (index === 0) {
-          preloadVideoRef.current = spriteSheet as any;
-        }
-      };
+      const img = new window.Image();
+      img.decoding = "async";
+      img.src = "/images/5177180.jpg";
 
-      spriteSheet.src = path;
-
-      if (spriteSheet.complete && spriteSheet.naturalWidth > 0) {
-        loadedSheets[index] = spriteSheet;
-        if (index === 0) {
-          preloadVideoRef.current = spriteSheet as any;
-        }
-      }
-    });
-
-    if (typeof document !== 'undefined') {
-      spriteSheetPaths.forEach(path => {
-        const link = document.createElement('link');
-        link.rel = 'preload';
-        link.as = 'image';
+      spriteSheetPaths.forEach((path) => {
+        if (document.querySelector(`link[rel="preload"][href="${path}"]`)) return;
+        const link = document.createElement("link");
+        link.rel = "preload";
+        link.as = "image";
         link.href = path;
         link.crossOrigin = "anonymous";
         document.head.appendChild(link);
       });
+    };
+
+    let idleId: number | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    if ("requestIdleCallback" in window) {
+      idleId = requestIdleCallback(preload, { timeout: 4000 }) as unknown as number;
+    } else {
+      timeoutId = setTimeout(preload, 1200);
     }
 
-    const img = new window.Image();
-    img.src = "/images/5177180.jpg";
-    img.loading = "eager";
-    preloadImageRef.current = img;
-  }, []);
+    return () => {
+      cancelled = true;
+      if (idleId != null && "cancelIdleCallback" in window) {
+        cancelIdleCallback(idleId);
+      }
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [pathname]);
 
   useEffect(() => {
     const previousPathname = previousPathnameRef.current;
     previousPathnameRef.current = pathname;
-    
-    if (pathname && pathname !== '/') {
+
+    if (pathname && pathname !== "/") {
       setShowSite(false);
       loaderStartedRef.current = false;
       return;
     }
-      
-    const isTransitioningToHome = pathname === '/' && previousPathname !== '/';
+
+    const isTransitioningToHome = pathname === "/" && previousPathname !== "/";
     if (isTransitioningToHome) {
       loaderStartedRef.current = false;
     }
-    
+
     if (isLoading) {
       setShowSite(true);
       return;
     }
-    
+
     if (loaderStartedRef.current) return;
-    
+
     loaderStartedRef.current = true;
-    
+
     startLoader({
-      content: <HomePageClient key="homepage-loader" isInLoader={true} />,
+      content: <LoaderEaselPreview />,
       zoomDelay: 3,
       zoomDuration: 3.5,
       fadeDelay: 6,
@@ -100,41 +115,38 @@ export default function HomePageShell() {
         setPaintDripState(0);
         setShowSite(true);
       },
-      onComplete: () => {
-      },
+      onComplete: () => {},
     });
   }, [pathname, startLoader, isLoading, setPaintDripState]);
 
-  const [shouldShowMain, setShouldShowMain] = useState(false);
   const [isPreWarmed, setIsPreWarmed] = useState(false);
   const [zoomComplete, setZoomComplete] = useState(false);
   const startEntranceAnimationsRef = useRef<(() => void) | null>(null);
-  
+
   useEffect(() => {
-    if (pathname === '/' || !pathname) {
+    if (pathname === "/" || !pathname) {
       const preWarmTimer = setTimeout(() => {
         setIsPreWarmed(true);
-      }, 5400); // fadeDelay * 0.9 * 1000
-      
+      }, 5400);
+
       const backgroundChangeTimer = setTimeout(() => {
         setPaintDripState(1);
         setIsScrollSceneActive(true);
-      }, 6000); // fadeDelay * 1000
-      
+      }, 6000);
+
       const zoomCompleteTimer = setTimeout(() => {
         setZoomComplete(true);
         if (startEntranceAnimationsRef.current) {
           startEntranceAnimationsRef.current();
         }
-      }, 6500); // (zoomDelay + zoomDuration) * 1000 
-      
+      }, 6500);
+
       return () => {
         clearTimeout(preWarmTimer);
         clearTimeout(backgroundChangeTimer);
         clearTimeout(zoomCompleteTimer);
       };
     } else {
-      setShouldShowMain(false);
       setIsPreWarmed(false);
       setZoomComplete(false);
     }
@@ -162,10 +174,10 @@ export default function HomePageShell() {
             backgroundColor: "#fce3e7",
           }}
         >
-          <HomePageClient 
-            key="homepage-main" 
-            isInLoader={false} 
-            delayAnimations={false} 
+          <HomePageClient
+            key="homepage-main"
+            isInLoader={false}
+            delayAnimations={false}
             isVisible={isMainComponentVisible}
             startEntranceAnimationsRef={startEntranceAnimationsRef}
             zoomComplete={zoomComplete}

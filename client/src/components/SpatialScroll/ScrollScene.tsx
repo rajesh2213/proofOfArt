@@ -134,9 +134,12 @@ export default function ScrollScene({
     window.addEventListener("touchstart", onTouchStart, { passive: true });
     window.addEventListener("touchmove", onTouchMove, { passive: true });
 
+    let tickerActive = false;
+    let sceneVisible = true;
+
     const tick = () => {
       if (!shouldLoopRef.current) return;
-      
+
       camZ.current += AUTO_RATE;
       camZ.current += velocity.current * 0.06;
       velocity.current *= VELOCITY_DECAY;
@@ -186,7 +189,7 @@ export default function ScrollScene({
         onUpdateEnd(docScrollable);
       }
 
-      if (!shouldLoop && onSceneComplete) {
+      if (!shouldLoopRef.current && onSceneComplete) {
         const allPast = layersRef.current.every((_el, i) => {
           const baseZ = i * PER_LAYER_Z;
           let travel = (cam + baseZ) % LOOP_RANGE;
@@ -198,10 +201,51 @@ export default function ScrollScene({
       }
     };
 
-    gsap.ticker.add(tick);
+    const startTicker = () => {
+      if (tickerActive) return;
+      gsap.ticker.add(tick);
+      tickerActive = true;
+    };
+
+    const stopTicker = () => {
+      if (!tickerActive) return;
+      gsap.ticker.remove(tick);
+      tickerActive = false;
+    };
+
+    const syncTicker = () => {
+      const pageVisible = typeof document === "undefined" || document.visibilityState === "visible";
+      if (shouldLoopRef.current && sceneVisible && pageVisible) {
+        startTicker();
+      } else {
+        stopTicker();
+      }
+    };
+
+    syncTicker();
+
+    const io =
+      typeof IntersectionObserver !== "undefined"
+        ? new IntersectionObserver(
+            ([entry]) => {
+              sceneVisible = !!entry?.isIntersecting;
+              syncTicker();
+            },
+            { threshold: 0.01 }
+          )
+        : null;
+
+    if (io && root) {
+      io.observe(root);
+    }
+
+    const onVisibility = () => syncTicker();
+    document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
-      gsap.ticker.remove(tick);
+      stopTicker();
+      io?.disconnect();
+      document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("wheel", onWheel);
       window.removeEventListener("touchstart", onTouchStart);
       window.removeEventListener("touchmove", onTouchMove);

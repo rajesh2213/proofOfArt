@@ -375,7 +375,7 @@ export default function ResultsViewer({ artwork, isOpen, onClose, onViewFullProo
                                                     }}
                                                 >
                                                     <Shield className="h-5 w-5 text-green-400" />
-                                                    Signed Metadata
+                                                    Platform-signed forensic snapshot
                                                 </h3>
                                                 <div className="space-y-3 text-sm text-white/90">
                                                     <div className="flex items-start justify-between">
@@ -421,7 +421,7 @@ export default function ResultsViewer({ artwork, isOpen, onClose, onViewFullProo
                                             }}
                                         >
                                             <Download className="h-4 w-4" />
-                                            {downloading ? 'Downloading...' : 'Download (with signed metadata)'}
+                                            {downloading ? 'Downloading...' : 'Download (with forensic snapshot)'}
                                         </button>
                                     )}
                                     {hasProof && onViewFullProof && (

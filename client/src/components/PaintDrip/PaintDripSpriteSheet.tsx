@@ -45,6 +45,7 @@ export default function PaintDripSpriteSheet() {
 
   const lastFrameRef = useRef(-1);
   const currentFrameRef = useRef(START_FRAME);
+  const frozenRef = useRef(false);
 
   const frameMetaRef = useRef<{ sheet: HTMLImageElement; sx: number; sy: number; }[]>([]);
   
@@ -61,7 +62,7 @@ export default function PaintDripSpriteSheet() {
   const isPostButtonDrip = paintDripState === 2;
   const allowInitialRender = isInitialDrip && isScrollSceneActive;
   const allowPostButtonRender = isPostButtonDrip;
-  const drawFrame = (frame: number) => {
+  const drawFrame = (frame: number, force = false) => {
     const ctx = ctxRef.current;
     const canvas = canvasRef.current;
     
@@ -69,8 +70,13 @@ export default function PaintDripSpriteSheet() {
       return;
     }
 
+    // After intro completes, skip redraws unless forced (e.g. one freeze frame / resize)
+    if (frozenRef.current && !force) {
+      return;
+    }
+
     frame = Math.max(START_FRAME, Math.min(frame, LAST_ACTUAL_FRAME));
-    if (lastFrameRef.current === frame) {
+    if (lastFrameRef.current === frame && !force) {
       return;
     }
     lastFrameRef.current = frame;
@@ -101,6 +107,10 @@ export default function PaintDripSpriteSheet() {
   useEffect(() => {
     if (paintDripState === 3) {
       animationCompleteRef.current = true;
+      frozenRef.current = true;
+      drawFrame(LAST_ACTUAL_FRAME, true);
+    } else if (paintDripState === 0 || paintDripState === 1 || paintDripState === 2) {
+      frozenRef.current = false;
     }
   }, [paintDripState]);
 
@@ -114,6 +124,7 @@ export default function PaintDripSpriteSheet() {
       setInitialAnimationDone(false);
       postButtonAnimationStartedRef.current = false;
       animationCompleteRef.current = false;
+      frozenRef.current = false;
       currentFrameRef.current = START_FRAME;
       lastFrameRef.current = -1;
       
@@ -214,6 +225,13 @@ export default function PaintDripSpriteSheet() {
         ctx.imageSmoothingQuality = "high";
         ctxRef.current = ctx;
       }
+
+      // One forced redraw after size change (including frozen end-state)
+      const frame = frozenRef.current
+        ? LAST_ACTUAL_FRAME
+        : Math.max(START_FRAME, lastFrameRef.current >= 0 ? lastFrameRef.current : START_FRAME);
+      lastFrameRef.current = -1;
+      drawFrame(frame, true);
     };
 
     resize();
@@ -345,7 +363,8 @@ export default function PaintDripSpriteSheet() {
       },
       onComplete() {
         animationCompleteRef.current = true;
-        drawFrame(LAST_ACTUAL_FRAME);
+        drawFrame(LAST_ACTUAL_FRAME, true);
+        frozenRef.current = true;
         setPaintDripState(3);
       },
     });
@@ -362,7 +381,7 @@ export default function PaintDripSpriteSheet() {
         scrollTriggerRef.current = null;
       }
     };
-  }, [allowPostButtonRender, isLoading, initialAnimationDone, setPaintDripState]);
+  }, [allowPostButtonRender, isLoading, initialAnimationDone, setPaintDripState, paintDripState]);
 
   useEffect(() => {
     if (isLoading || frameMetaRef.current.length === 0 || !fwRef.current || !fhRef.current) {
@@ -428,6 +447,7 @@ export default function PaintDripSpriteSheet() {
   }
   
   const opacity = isLoaderLoading ? 0 : 0.99;
+  const isFrozen = paintDripState === 3 || animationCompleteRef.current;
   
   return (
     <div
@@ -436,7 +456,7 @@ export default function PaintDripSpriteSheet() {
       style={{ 
         opacity: opacity,
         visibility: isLoaderLoading ? 'hidden' : 'visible',
-        willChange: 'opacity',
+        willChange: isFrozen ? 'auto' : 'opacity',
         backfaceVisibility: 'hidden',
         WebkitBackfaceVisibility: 'hidden',
         transform: 'translate3d(0, 0, 0)',
@@ -449,7 +469,7 @@ export default function PaintDripSpriteSheet() {
           width: "100vw", 
           height: "100vh", 
           display: "block",
-          willChange: 'contents',
+          willChange: isFrozen ? 'auto' : 'contents',
           backfaceVisibility: 'hidden',
           WebkitBackfaceVisibility: 'hidden',
         }}

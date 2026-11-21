@@ -9,6 +9,7 @@ import { downloadArtwork } from '../../lib/api/art';
 import { useAuth } from '../../contexts/AuthContext';
 import PreviewModal from './PreviewModal';
 import ResultsViewer from './ResultsViewer';
+import { cloudinaryThumb } from '../../utils/cloudinary';
 
 interface ArtCardProps {
     artwork: Artwork;
@@ -133,16 +134,10 @@ export default function ArtCard({ artwork }: ArtCardProps) {
     const hasProof = !!artwork.proofMetadata || !!artwork.embeddedProof;
     const aiScore = artwork.image.detectionReport?.aiProbability || 0;
     const canDownload = user && (artwork.currentOwnerId === user.id || artwork.originalUploaderId === user.id);
-    const proofMetadata = artwork.proofMetadata as any;
-
-    useEffect(() => {
-        const img = new window.Image();
-        img.onload = () => {
-            const aspectRatio = img.width / img.height;
-            setImageAspectRatio(aspectRatio > 1 ? 'landscape' : 'portrait');
-        };
-        img.src = artwork.image.url;
-    }, [artwork.image.url]);
+    const thumbSrc = useMemo(
+        () => cloudinaryThumb(artwork.image.url, { width: 480, crop: 'fill' }),
+        [artwork.image.url]
+    );
 
     const baseRotation = useMemo(() => {
         const hash = artwork.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -152,9 +147,10 @@ export default function ArtCard({ artwork }: ArtCardProps) {
     const x = useMotionValue(0);
     const y = useMotionValue(0);
 
-    const rotateX = useSpring(useTransform(y, [-0.5, 0.5], [2, -2]), { stiffness: 300, damping: 30 });
-    const rotateY = useSpring(useTransform(x, [-0.5, 0.5], [-2, 2]), { stiffness: 300, damping: 30 });
-    const liftY = useSpring(useTransform(y, [-0.5, 0.5], [0, -8]), { stiffness: 200, damping: 25 });
+    // Lighter springs — less CPU on gallery hover
+    const rotateX = useSpring(useTransform(y, [-0.5, 0.5], [1.5, -1.5]), { stiffness: 140, damping: 28, mass: 0.6 });
+    const rotateY = useSpring(useTransform(x, [-0.5, 0.5], [-1.5, 1.5]), { stiffness: 140, damping: 28, mass: 0.6 });
+    const liftY = useSpring(useTransform(y, [-0.5, 0.5], [0, -4]), { stiffness: 120, damping: 24, mass: 0.6 });
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -306,11 +302,20 @@ export default function ArtCard({ artwork }: ArtCardProps) {
 
                                 <div className="relative w-full h-full z-20">
                                     <Image
-                                        src={artwork.image.url}
+                                        src={thumbSrc}
                                         alt={artwork.image.filename || 'Artwork'}
                                         fill
                                         className="object-cover"
                                         loading="lazy"
+                                        sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, (max-width: 1280px) 25vw, 20vw"
+                                        onLoad={(e) => {
+                                            const img = e.currentTarget;
+                                            if (img.naturalWidth && img.naturalHeight) {
+                                                setImageAspectRatio(
+                                                    img.naturalWidth > img.naturalHeight ? 'landscape' : 'portrait'
+                                                );
+                                            }
+                                        }}
                                         style={{
                                             filter: 'contrast(1.02) saturate(1.05)',
                                             clipPath: 'polygon(2% 2%, 98% 2%, 97% 98%, 3% 98%)',
@@ -329,7 +334,7 @@ export default function ArtCard({ artwork }: ArtCardProps) {
                                     {hasProof && (
                                         <div className="bg-green-600/95 backdrop-blur-sm text-white text-xs px-2.5 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg border border-green-400/30">
                                             <Shield className="h-3.5 w-3.5" />
-                                            <span className="font-medium">Verified</span>
+                                            <span className="font-medium">Signed</span>
                                         </div>
                                     )}
                                     {!isAiGenerated && (

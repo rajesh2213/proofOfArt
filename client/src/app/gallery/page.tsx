@@ -40,7 +40,7 @@ export default function GalleryPage() {
         try {
             setLoading(true);
             setError(null);
-            const response = await getArtworks(filter, 100, 0);
+            const response = await getArtworks(filter, 24, 0, 'list');
             if (response.success) {
                 setArtworks(response.data.artworks);
             }
@@ -178,7 +178,7 @@ export default function GalleryPage() {
                                     textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
                                 }}
                             >
-                                All authenticity checks (AI detection, tamper detection, proof metadata) are performed automatically when you upload artwork. You can download original-quality images with cryptographically signed proof metadata embedded.
+                                Forensic checks (AI detection, tamper detection) run automatically on upload. Downloads can include a platform-signed forensic snapshot embedded in image metadata — a hash-linked record, not a courtroom chain of custody.
                             </p>
                         </motion.div>
                     </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Image from 'next/image';
 import { getArtworkById, verifyArtworkProof, Artwork, ProofVerification } from '../../lib/api/art';
@@ -21,38 +21,55 @@ export default function ArtworkDetailPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showClaimModal, setShowClaimModal] = useState(false);
+    const [showProofUI, setShowProofUI] = useState(false);
+    const [proofLoading, setProofLoading] = useState(false);
+    const [proofError, setProofError] = useState<string | null>(null);
     
     const { status: jobStatus, progress: jobProgress, isPolling } = useJobStatus({
         imageId: artwork?.imageId || null,
         enabled: !!artwork && !artwork.image.detectionReport,
-        onComplete: (data) => {
+        onComplete: () => {
             if (artworkId) {
                 loadArtwork();
             }
         },
     });
 
-    useEffect(() => {
-        if (artworkId) {
-            loadArtwork();
-        }
-    }, [artworkId]);
-
-    const loadArtwork = async () => {
+    const loadArtwork = useCallback(async () => {
         try {
             setLoading(true);
             const response = await getArtworkById(artworkId);
             if (response.success) {
                 setArtwork(response.data.artwork);
-                const verifyResponse = await verifyArtworkProof(artworkId);
-                if (verifyResponse.success) {
-                    setProofVerification(verifyResponse.data.verification);
-                }
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to load artwork');
         } finally {
             setLoading(false);
+        }
+    }, [artworkId]);
+
+    useEffect(() => {
+        if (artworkId) {
+            loadArtwork();
+        }
+    }, [artworkId, loadArtwork]);
+
+    const openProofUI = async () => {
+        setShowProofUI(true);
+        if (proofVerification || proofLoading || !artworkId) return;
+
+        try {
+            setProofLoading(true);
+            setProofError(null);
+            const verifyResponse = await verifyArtworkProof(artworkId);
+            if (verifyResponse.success) {
+                setProofVerification(verifyResponse.data.verification);
+            }
+        } catch (err) {
+            setProofError(err instanceof Error ? err.message : 'Failed to verify proof');
+        } finally {
+            setProofLoading(false);
         }
     };
 
@@ -78,6 +95,7 @@ export default function ArtworkDetailPage() {
     const isAiGenerated = artwork.image.detectionReport?.detectedLabel === 'AI_GENERATED';
     const hasTamper = (artwork.image.editDetections?.length || 0) > 0;
     const maskUrl = artwork.image.editDetections?.[0]?.maskUrl;
+    const hasStoredProof = !!artwork.proofMetadata || !!artwork.embeddedProof;
 
     return (
         <div className="container mx-auto px-4 py-8">
@@ -110,10 +128,10 @@ export default function ArtworkDetailPage() {
                         {artwork.image.filename || 'Untitled Artwork'}
                     </h1>
 
-                    <div className="flex gap-2 mb-4">
+                    <div className="flex gap-2 mb-4 flex-wrap">
                         {proofVerification?.isValid && (
                             <span className="bg-green-500 text-white px-3 py-1 rounded-full text-sm">
-                                ✓ Verified Authentic
+                                Platform-signed snapshot OK
                             </span>
                         )}
                         {!isAiGenerated && (
@@ -201,29 +219,51 @@ export default function ArtworkDetailPage() {
                         </div>
                     )}
 
-                    {proofVerification && (
-                        <div className="bg-gray-50 p-4 rounded-lg mt-4">
-                            <h3 className="font-semibold mb-2">Proof Verification</h3>
-                            <div className="text-sm space-y-1">
-                                <p>
-                                    Valid: <span className={proofVerification.isValid ? 'text-green-600' : 'text-red-600'}>
-                                        {proofVerification.isValid ? 'Yes' : 'No'}
-                                    </span>
-                                </p>
-                                <p>
-                                    Was Edited: <span className={proofVerification.wasEdited ? 'text-red-600' : 'text-green-600'}>
-                                        {proofVerification.wasEdited ? 'Yes' : 'No'}
-                                    </span>
-                                </p>
-                                {proofVerification.originalMetadata && (
-                                    <div className="mt-2">
-                                        <p className="font-medium">Original Metadata:</p>
-                                        <pre className="text-xs bg-white p-2 rounded mt-1 overflow-auto">
-                                            {JSON.stringify(proofVerification.originalMetadata, null, 2)}
-                                        </pre>
-                                    </div>
-                                )}
-                            </div>
+                    {hasStoredProof && (
+                        <div className="mt-4">
+                            {!showProofUI ? (
+                                <button
+                                    type="button"
+                                    onClick={openProofUI}
+                                    className="px-4 py-2 bg-gray-800 text-white rounded-lg text-sm hover:bg-gray-700"
+                                >
+                                    View platform-signed forensic snapshot
+                                </button>
+                            ) : (
+                                <div className="bg-gray-50 p-4 rounded-lg">
+                                    <h3 className="font-semibold mb-2">Platform-signed forensic snapshot</h3>
+                                    {proofLoading && (
+                                        <p className="text-sm text-gray-500">Verifying snapshot…</p>
+                                    )}
+                                    {proofError && (
+                                        <p className="text-sm text-red-600">{proofError}</p>
+                                    )}
+                                    {proofVerification && (
+                                        <div className="text-sm space-y-1">
+                                            <p>
+                                                Signature check:{' '}
+                                                <span className={proofVerification.isValid ? 'text-green-600' : 'text-red-600'}>
+                                                    {proofVerification.isValid ? 'OK' : 'Failed'}
+                                                </span>
+                                            </p>
+                                            <p>
+                                                Hash mismatch:{' '}
+                                                <span className={proofVerification.wasEdited ? 'text-red-600' : 'text-green-600'}>
+                                                    {proofVerification.wasEdited ? 'Yes' : 'No'}
+                                                </span>
+                                            </p>
+                                            {proofVerification.originalMetadata && (
+                                                <div className="mt-2">
+                                                    <p className="font-medium">Snapshot metadata:</p>
+                                                    <pre className="text-xs bg-white p-2 rounded mt-1 overflow-auto">
+                                                        {JSON.stringify(proofVerification.originalMetadata, null, 2)}
+                                                    </pre>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -242,4 +282,3 @@ export default function ArtworkDetailPage() {
         </div>
     );
 }
-

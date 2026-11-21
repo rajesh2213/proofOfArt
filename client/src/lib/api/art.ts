@@ -142,9 +142,14 @@ export interface ProofVerification {
     error?: string;
 }
 
-export const getArtworks = async (filter: 'all' | 'uploaded' | 'claimed' = 'all', limit = 50, offset = 0) => {
+export const getArtworks = async (
+    filter: 'all' | 'uploaded' | 'claimed' = 'all',
+    limit = 50,
+    offset = 0,
+    view: 'list' | 'full' = 'list'
+) => {
     return apiRequest<{ success: boolean; data: { artworks: Artwork[]; count: number; limit: number; offset: number; filter: string } }>(
-        `/api/art?filter=${filter}&limit=${limit}&offset=${offset}`
+        `/api/art?filter=${filter}&limit=${limit}&offset=${offset}&view=${view}`
     );
 };
 
