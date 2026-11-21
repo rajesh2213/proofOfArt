@@ -1,0 +1,13 @@
+# Generation venv (GPU). Python 3.10.
+# torch/torchvision: install first from the CUDA index, e.g.
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+diffusers>=0.30
+transformers>=4.40
+accelerate
+safetensors
+opencv-python-headless
+pandas
+tqdm
+pillow
+scipy
+pytest>=8

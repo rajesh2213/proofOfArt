@@ -1,0 +1,8 @@
+{
+  "n_feedback": 1,
+  "n_ingested": 1,
+  "by_action": {
+    "q2_reject_mask": 1
+  },
+  "out": "D:\\js\\a_project_repo\\proofOfArt\\inference\\dataset\\manifests\\feedback_ingest_v1.csv"
+}

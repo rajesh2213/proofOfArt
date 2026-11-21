@@ -1,0 +1,2 @@
+path,label,q1_target,mask_path,split,group_root,source,editor,operation,composite,mask_ratio,paired_with,width,height,feedback_id,action
+dataset/demo.png,pristine_real,0,,train,feedback|demo,feedback_soft,,,,0.0,,0,0,75c9da96b72c,q2_reject_mask

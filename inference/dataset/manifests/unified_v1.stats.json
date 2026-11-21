@@ -1,0 +1,28 @@
+{
+  "by_split_label": {
+    "test|ai_local_edit": 79,
+    "test|fully_synthetic": 2203,
+    "test|pristine_real": 3231,
+    "test|traditional_edit": 1068,
+    "train|ai_local_edit": 2818,
+    "train|fully_synthetic": 10592,
+    "train|pristine_real": 20378,
+    "train|traditional_edit": 6929,
+    "val|ai_local_edit": 49,
+    "val|fully_synthetic": 2205,
+    "val|pristine_real": 3431,
+    "val|traditional_edit": 1298
+  },
+  "by_label_editor": {
+    "ai_local_edit|lama": 2534,
+    "ai_local_edit|legacy_sd15_inpaint": 410,
+    "ai_local_edit|sd15_inpaint": 2,
+    "pristine_real|copy_move": 675,
+    "pristine_real|lama": 2534,
+    "pristine_real|opencv_inpaint": 1003,
+    "pristine_real|sd15_inpaint": 2,
+    "traditional_edit|copy_move": 675,
+    "traditional_edit|manual": 7617,
+    "traditional_edit|opencv_inpaint": 1003
+  }
+}
